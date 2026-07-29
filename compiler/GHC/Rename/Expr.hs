@@ -79,6 +79,13 @@ import Data.Array
 import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 
+-- Imports for weight annotations
+import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, getFollowingComments, EpaComment(..), EpaCommentTok(..))
+import Text.Read (readMaybe)
+import Data.Char (isDigit, toLower, isAlpha)
+import Data.List (findIndex)
+--
+
 {- Note [Handling overloaded and rebindable constructs]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2017,6 +2024,31 @@ ApplicativeDo touches a few phases in the compiler:
   Relevant module: GHC.HsToCore.Expr
 
 -}
+
+-- Helper functions for weight annotations
+parseWeightFromComments :: EpAnnComments -> Maybe Int
+parseWeightFromComments cs = listToMaybe (mapMaybe (tryComment fcs)) where
+  -- Get the comments following the statement (closest-first)
+  fcs :: [LEpaComment]
+  fcs = getFollowingComments cs
+  -- Match the comment
+  try (L _ (EpaComment tok _)) = 
+    case tok of
+      EpaBlockComment s -> parseWeightFromString s
+      EpaLineComment  s -> parseWeightFromString s
+      _                 -> Nothing
+  try _ = Nothing
+
+parseWeightFromString :: String -> Maybe Int
+-- If the string has the expected format, then get the cost
+parseWeightFromString s | checkTokenStr ws = Just (readMaybe (tail ws) :: Maybe Int)
+                        | otherwise        = Nothing
+  where
+    checkTokenStr :: [String] -> Bool
+    -- The expected format is: 2 words, first "weight" (upper-insensitive), then a non-negative integer
+    checkTokenStr ls = ((length ls) == 2) && ((head ls) == "weight") && (and isDigit (tail ls))
+    ws = map (map toLower) (words s)
+
 
 -- | The 'Name's of @return@ and @pure@. These may not be 'returnName' and
 -- 'pureName' due to @QualifiedDo@ or @RebindableSyntax@.
