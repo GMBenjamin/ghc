@@ -2032,21 +2032,21 @@ parseWeightFromComments cs = listToMaybe (mapMaybe (tryComment fcs)) where
   fcs :: [LEpaComment]
   fcs = getFollowingComments cs
   -- Match the comment
-  try (L _ (EpaComment tok _)) = 
+  tryComment (L _ (EpaComment tok _)) = 
     case tok of
       EpaBlockComment s -> parseWeightFromString s
       EpaLineComment  s -> parseWeightFromString s
       _                 -> Nothing
-  try _ = Nothing
+  tryComment _ = Nothing
 
 parseWeightFromString :: String -> Maybe Int
 -- If the string has the expected format, then get the cost
-parseWeightFromString s | checkTokenStr ws = Just (readMaybe (tail ws) :: Maybe Int)
+parseWeightFromString s | checkTokenStr ws = readMaybe (last ws) :: Maybe Int
                         | otherwise        = Nothing
   where
     checkTokenStr :: [String] -> Bool
     -- The expected format is: 2 words, first "weight" (upper-insensitive), then a non-negative integer
-    checkTokenStr ls = ((length ls) == 2) && ((head ls) == "weight") && (and isDigit (tail ls))
+    checkTokenStr ls = ((length ls) == 2) && ((head ls) == "weight") && (and isDigit (last ls))
     ws = map (map toLower) (words s)
 
 
