@@ -2146,6 +2146,16 @@ mkStmtTreeOptimal stmts =
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
 
+    -- compute the weight of a single statement
+    stmtWeight :: (ExprLStmt GhcRn, FreeNames) -> Cost
+    stmtWeight ((L loc _), _) =
+      case loc of
+        EpAnn _ _ cs ->
+          case parseWeightFromComments cs of
+            Just w | w > 0 -> w
+            _              -> 1
+        _ -> 1
+
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
     arr = array ((0,0),(n,n))
@@ -2155,7 +2165,7 @@ mkStmtTreeOptimal stmts =
 
     -- compute the optimal tree for the sequence [lo..hi]
     tree lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), 1)
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), stmtWeight (stmt_arr ! lo))
       | otherwise =
          case segments [ stmt_arr ! i | i <- [lo..hi] ] of
            [] -> panic "mkStmtTree"
@@ -2169,7 +2179,7 @@ mkStmtTreeOptimal stmts =
     -- find the best place to split the segment [lo..hi]
     split :: Int -> Int -> (ExprStmtTree, Cost)
     split lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), 1)
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), loCost)
       | otherwise = (StmtTreeBind before after, c1+c2)
         where
          -- As per the paper, for a sequence s1...sn, we want to find
@@ -2180,23 +2190,29 @@ mkStmtTreeOptimal stmts =
          -- s1..s(n-1) is different from the cost of s2..sn, we know
          -- that the optimal solution is the lower of the two.  Only
          -- in the case that these two have the same cost do we need
-         -- to do the exhaustive search.
+         -- to do the exhaustive search. ***Hubinette and Thune 3.1.1
          --
          ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
              Nothing ->
-               ( (StmtTreeOne (stmt_arr ! lo), 1),
-                 (StmtTreeOne (stmt_arr ! hi), 1) )
+               ( (StmtTreeOne (stmt_arr ! lo), loCost),
+                 (StmtTreeOne (stmt_arr ! hi), hiCost) ) -- ***Hubinette and Thune 3.1.1
              Just ks
-               | left_cost < right_cost
-               -> ((left,left_cost), (StmtTreeOne (stmt_arr ! hi), 1))
-               | left_cost > right_cost
-               -> ((StmtTreeOne (stmt_arr ! lo), 1), (right,right_cost))
+               | (zeroCost == nCost) && (left_cost < right_cost)
+               -- ***Hubinette and Thune 3.1.1
+               -> ((left,left_cost), (StmtTreeOne (stmt_arr ! hi), hiCost))
+               | (zeroCost == nCost) && (left_cost > right_cost)
+               -- ***Hubinette and Thune 3.1.1
+               -> ((StmtTreeOne (stmt_arr ! lo), loCost), (right,right_cost))
                | otherwise -> minimumBy (comparing cost)
                  [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
            where
              (left, left_cost) = arr ! (lo,hi-1)
              (right, right_cost) = arr ! (lo+1,hi)
              cost ((_,c1),(_,c2)) = c1 + c2
+             loCost = stmtWeight (stmt_arr ! lo)
+             hiCost = stmtWeight (stmt_arr ! hi)
+             zeroCost = stmtWeight (stmt_arr ! 0)
+             nCost = stmtWeight (stmt_arr ! n)
 
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
