@@ -2026,7 +2026,7 @@ ApplicativeDo touches a few phases in the compiler:
 
 -- Helper functions for weight annotations
 parseWeightFromComments :: EpAnnComments -> Maybe Int
-parseWeightFromComments cs = listToMaybe (mapMaybe (tryComment fcs)) where
+parseWeightFromComments cs = listToMaybe (mapMaybe tryComment fcs) where
   -- Get the comments following the statement (closest-first)
   fcs :: [LEpaComment]
   fcs = getFollowingComments cs
@@ -2036,16 +2036,16 @@ parseWeightFromComments cs = listToMaybe (mapMaybe (tryComment fcs)) where
       EpaBlockComment s -> parseWeightFromString s
       EpaLineComment  s -> parseWeightFromString s
       _                 -> Nothing
-  tryComment _ = Nothing
 
 parseWeightFromString :: String -> Maybe Int
 -- If the string has the expected format, then get the cost
-parseWeightFromString s | checkTokenStr ws = readMaybe (last ws) :: Maybe Int
-                        | otherwise        = Nothing
+parseWeightFromString s = 
+  case ws of 
+    [x,y] -> if ((x == "weight") && (all isDigit y))
+             then (readMaybe y) :: Maybe Int
+             else Nothing
+    _     -> Nothing
   where
-    checkTokenStr :: [String] -> Bool
-    -- The expected format is: 2 words, first "weight" (upper-insensitive), then a non-negative integer
-    checkTokenStr ls = ((length ls) == 2) && ((head ls) == "weight") && (and isDigit (last ls))
     ws = map (map toLower) (words s)
 
 
@@ -2153,7 +2153,6 @@ mkStmtTreeOptimal stmts =
           case parseWeightFromComments cs of
             Just w | w > 0 -> w
             _              -> 1
-        _ -> 1
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
@@ -2178,7 +2177,7 @@ mkStmtTreeOptimal stmts =
     -- find the best place to split the segment [lo..hi]
     split :: Int -> Int -> (ExprStmtTree, Cost)
     split lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), loCost)
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), stmtWeight (stmt_arr ! lo))
       | otherwise = (StmtTreeBind before after, c1+c2)
         where
          -- As per the paper, for a sequence s1...sn, we want to find
