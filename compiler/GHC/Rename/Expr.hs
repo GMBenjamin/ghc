@@ -2194,24 +2194,11 @@ mkStmtTreeOptimal stmts =
              Nothing ->
                ( (StmtTreeOne (stmt_arr ! lo), loCost),
                  (StmtTreeOne (stmt_arr ! hi), hiCost) ) -- ***Hubinette and Thune 3.1.1
-             Just ks
-               | (zeroCost == nCost) && (left_cost < right_cost)
-               -- ***Hubinette and Thune 3.1.1
-               -> ((left,left_cost), (StmtTreeOne (stmt_arr ! hi), hiCost))
-               | (zeroCost == nCost) && (left_cost > right_cost)
-               -- ***Hubinette and Thune 3.1.1
-               -> ((StmtTreeOne (stmt_arr ! lo), loCost), (right,right_cost))
-               | otherwise -> minimumBy (comparing cost)
-                 [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
+             Just ks ->
+               minimumBy (comparing cost) [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
+               --(comparing snd)
            where
-             (left, left_cost) = arr ! (lo,hi-1)
-             (right, right_cost) = arr ! (lo+1,hi)
              cost ((_,c1),(_,c2)) = c1 + c2
-             loCost = stmtWeight (stmt_arr ! lo)
-             hiCost = stmtWeight (stmt_arr ! hi)
-             zeroCost = stmtWeight (stmt_arr ! 0)
-             nCost = stmtWeight (stmt_arr ! n)
-
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
