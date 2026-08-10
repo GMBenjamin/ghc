@@ -2153,6 +2153,8 @@ mkStmtTreeOptimal stmts =
           case parseWeightFromComments cs of
             Just w | w > 0 -> w
             _              -> 1
+    
+    cost_arr = listArray (0,n) [stmtWeight s | s <- stmts]
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
@@ -2163,7 +2165,7 @@ mkStmtTreeOptimal stmts =
 
     -- compute the optimal tree for the sequence [lo..hi]
     tree lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), stmtWeight (stmt_arr ! lo))
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
       | otherwise =
          case segments [ stmt_arr ! i | i <- [lo..hi] ] of
            [] -> panic "mkStmtTree"
@@ -2177,7 +2179,7 @@ mkStmtTreeOptimal stmts =
     -- find the best place to split the segment [lo..hi]
     split :: Int -> Int -> (ExprStmtTree, Cost)
     split lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), stmtWeight (stmt_arr ! lo))
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
       | otherwise = (StmtTreeBind before after, c1+c2)
         where
          -- As per the paper, for a sequence s1...sn, we want to find
@@ -2199,8 +2201,8 @@ mkStmtTreeOptimal stmts =
                --(comparing snd)
            where
              cost ((_,c1),(_,c2)) = c1 + c2
-             loCost = stmtWeight (stmt_arr ! lo)
-             hiCost = stmtWeight (stmt_arr ! hi)
+             loCost = (cost_arr ! lo)
+             hiCost = (cost_arr ! hi)
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
