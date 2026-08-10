@@ -2199,6 +2199,8 @@ mkStmtTreeOptimal stmts =
                --(comparing snd)
            where
              cost ((_,c1),(_,c2)) = c1 + c2
+             loCost = stmtWeight (stmt_arr ! lo)
+             hiCost = stmtWeight (stmt_arr ! hi)
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
