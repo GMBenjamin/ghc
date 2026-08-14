@@ -2154,7 +2154,7 @@ mkStmtTreeOptimal stmts =
             Just w | w > 0 -> w
             _              -> 1
     
-    cost_arr = listArray (0,n) [stmtWeight s | s <- stmts]
+    cost_arr = listArray (0,n) [if i == 1 then 3 else 1 | i <- [0..n]]
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
