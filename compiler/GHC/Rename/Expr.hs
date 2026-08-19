@@ -2149,12 +2149,12 @@ mkStmtTreeOptimal stmts =
     stmtWeight :: (ExprLStmt GhcRn, FreeNames) -> Cost
     stmtWeight ((L loc _), _) =
       case loc of
-        EpAnn _ _ cs ->
+        (SrcSpanAnn (EpAnn _ _ cs) _) ->
           case parseWeightFromComments cs of
             Just w | w > 0 -> w
             _              -> 1
     
-    cost_arr = listArray (0,n) (replicate (n+1) 1)
+    cost_arr = listArray (0,n) (map stmtWeight stmts) --(replicate (n+1) 1)
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
