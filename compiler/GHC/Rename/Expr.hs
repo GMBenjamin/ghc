@@ -80,7 +80,7 @@ import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 
 -- Imports for weight annotations
-import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, getFollowingComments, EpaComment(..)) --, EpaCommentTok(..)
+import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, getFollowingComments, EpaComment(..), EpaCommentTok(..))
 import Text.Read (readMaybe)
 import Data.Char (isDigit, toLower)
 --
@@ -2040,13 +2040,11 @@ parseWeightFromComments cs = listToMaybe (mapMaybe tryComment fcs) where
 parseWeightFromString :: String -> Maybe Int
 -- If the string has the expected format, then get the cost
 parseWeightFromString s = 
-  case ws of 
+  case (map (map toLower) (words s)) of 
     [x,y] -> if ((x == "weight") && (all isDigit y))
              then (readMaybe y) :: Maybe Int
              else Nothing
-    _     -> Nothing
-  where
-    ws = map (map toLower) (words s)
+    _     -> Nothing 
 
 
 -- | The 'Name's of @return@ and @pure@. These may not be 'returnName' and
@@ -2149,10 +2147,11 @@ mkStmtTreeOptimal stmts =
     stmtWeight :: (ExprLStmt GhcRn, FreeNames) -> Cost
     stmtWeight ((L loc _), _) =
       case loc of
-        (SrcSpanAnn (EpAnn _ _ cs) _) ->
+        (EpAnn _ _ cs) ->
           case parseWeightFromComments cs of
             Just w | w > 0 -> w
             _              -> 1
+        _              -> 1
     
     cost_arr = listArray (0,n) (map stmtWeight stmts) --(replicate (n+1) 1)
 
@@ -2198,7 +2197,6 @@ mkStmtTreeOptimal stmts =
                  (StmtTreeOne (stmt_arr ! hi), hiCost) ) -- ***Hubinette and Thune 3.1.1
              Just ks ->
                minimumBy (comparing cost) [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
-               --(comparing snd)
            where
              cost ((_,c1),(_,c2)) = c1 + c2
              loCost = (cost_arr ! lo)
