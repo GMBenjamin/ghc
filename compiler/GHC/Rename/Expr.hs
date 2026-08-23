@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4)
+import Data.List (unzip4, dropWhile, reverse, drop)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -82,7 +82,7 @@ import Data.Foldable (toList)
 -- Imports for weight annotations
 import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, getFollowingComments, EpaComment(..), EpaCommentTok(..))
 import Text.Read (readMaybe)
-import Data.Char (isDigit, toLower)
+import Data.Char (isDigit, toLower, isSpace)
 --
 
 {- Note [Handling overloaded and rebindable constructs]
@@ -2036,8 +2036,15 @@ parseWeightFromComments cs = listToMaybe (mapMaybe tryComment fcs) where
       EpaBlockComment s -> parseWeightFromString s
       EpaLineComment  s -> parseWeightFromString s
       _                 -> Nothing
+      
+trim :: String -> String
+trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
 parseWeightFromString :: String -> Maybe Int
+-- Inline comment
+parseWeightFromString ('-':s) = parseWeightFromString (trim (drop 1 s))
+-- Block comment
+parseWeightFromString ('{':s) = parseWeightFromString (trim (reverse (drop 2 (reverse (drop 1 s)))))
 -- If the string has the expected format, then get the cost
 parseWeightFromString s = 
   case (map (map toLower) (words s)) of 
@@ -2045,7 +2052,6 @@ parseWeightFromString s =
              then (readMaybe y) :: Maybe Int
              else Nothing
     _     -> Nothing 
-
 
 -- | The 'Name's of @return@ and @pure@. These may not be 'returnName' and
 -- 'pureName' due to @QualifiedDo@ or @RebindableSyntax@.
