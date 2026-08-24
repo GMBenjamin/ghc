@@ -2027,10 +2027,9 @@ ApplicativeDo touches a few phases in the compiler:
 -- Helper functions for weight annotations
 parseWeightFromComments :: EpAnnComments -> Maybe Int
 parseWeightFromComments cs = listToMaybe (mapMaybe tryComment fcs) where
-  -- Get the comments following the statement (closest-first)
+  -- Get the comments previous to the statement (closest-first)
   fcs :: [LEpaComment]
-  fcs = getFollowingComments cs
-  -- Match the comment
+  fcs = priorComments cs --reverse (priorComments cs)
   tryComment (L _ (EpaComment tok _)) = 
     case tok of
       EpaBlockComment s -> parseWeightFromString s
