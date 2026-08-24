@@ -80,7 +80,7 @@ import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 
 -- Imports for weight annotations
-import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, getFollowingComments, EpaComment(..), EpaCommentTok(..))
+import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, priorComments, EpaComment(..), EpaCommentTok(..))
 import Text.Read (readMaybe)
 import Data.Char (isDigit, toLower, isSpace)
 --
