@@ -2026,10 +2026,10 @@ ApplicativeDo touches a few phases in the compiler:
 
 -- Helper functions for weight annotations
 parseWeightFromComments :: EpAnnComments -> Maybe Int
-parseWeightFromComments cs = listToMaybe (mapMaybe tryComment fcs) where
+parseWeightFromComments cs = listToMaybe (mapMaybe tryComment pcs) where
   -- Get the comments previous to the statement (closest-first)
-  fcs :: [LEpaComment]
-  fcs = priorComments cs --reverse (priorComments cs)
+  pcs :: [LEpaComment]
+  pcs = reverse (priorComments cs) --priorComments cs 
   tryComment (L _ (EpaComment tok _)) = 
     case tok of
       EpaBlockComment s -> parseWeightFromString s
@@ -2190,11 +2190,7 @@ mkStmtTreeOptimal stmts =
          -- the split with the minimum cost, where the cost is the
          -- sum of the cost of the left and right subsequences.
          --
-         -- As an optimisation (also in the paper) if the cost of
-         -- s1..s(n-1) is different from the cost of s2..sn, we know
-         -- that the optimal solution is the lower of the two.  Only
-         -- in the case that these two have the same cost do we need
-         -- to do the exhaustive search. ***Hubinette and Thune 3.1.1
+         -- ***Hubinette and Thune 3.1.1
          --
          ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
              Nothing ->
