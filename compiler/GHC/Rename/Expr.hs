@@ -2046,6 +2046,34 @@ parseWeightFromComments cs = listToMaybe (mapMaybe tryComment pcs) where
 trim :: String -> String
 trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
+-- New Parse String Function
+parseTuplePW :: String -> Maybe (Int, Int)
+parseTuplePW s = ans where
+  coPos = (elemIndeces ',' s) !! 0
+  posS = trim (drop 1 (take coPos s))
+  wS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s)))
+  ans | ((all isDigit posS) && (all isDigit posS)) =
+        if (((read posS) >= 0) && ((read wS) > 0))
+        then Just (read posS :: Int, read wS :: Int)
+        else Nothing
+      | otherwise = Nothing
+
+parsePosString :: String -> Maybe (Int, Int)
+-- Inline comment
+parsePosString ('-':s) = parseWeightFromString (trim (drop 1 s))
+-- Block comment
+parsePosString ('{':s) = parseWeightFromString (trim (reverse (drop 2 (reverse (drop 1 s)))))
+-- General case
+parsePosString s = 
+  case (map (map toLower) (words s)) of 
+    (x:y) -> if (x == "weight")
+             then parseTuplePW (trim (drop 6 (trim s)))
+             else if (x == "weight:")
+               then parseTuplePW (trim (drop 7 (trim s)))
+               else Nothing
+    _     -> Nothing
+
+-- Old Parser (TO BE REMOVED)
 parseWeightFromString :: String -> Maybe Int
 -- Inline comment
 parseWeightFromString ('-':s) = parseWeightFromString (trim (drop 1 s))
