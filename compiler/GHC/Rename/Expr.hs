@@ -489,12 +489,19 @@ rnExpr (HsLet _ binds expr)
       { (expr',fvExpr) <- rnLExpr expr
       ; return (HsLet noExtField binds' expr', fvExpr) }
 
+-- Modify HsDo pattern matching
+-- Catch annotations from the first element of the pattern
+-- Catch annotations from the third element of the pattern
+-- Give those annotations to the rearrange function
+-- NEW COST ANNOTATIONS: weight (#statement position [0..n], #cost)
 rnExpr (HsDo _ do_or_lc (L l stmts))
  = do { ((stmts1, _), fvs1) <-
           rnStmtsWithFreeNames (HsDoStmt do_or_lc) rnExpr stmts
             (\ _ -> return ((), emptyFNs))
       ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1
       ; return ( HsDo noExtField do_or_lc (L l pp_stmts), fvs1 `plusFN` fvs2 ) }
+
+
 -- ExplicitList: see Note [Handling overloaded and rebindable constructs]
 rnExpr (ExplicitList _ exps)
   = do  { (exps', fvs) <- rnExprs exps
