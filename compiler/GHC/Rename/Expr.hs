@@ -494,11 +494,11 @@ rnExpr (HsLet _ binds expr)
 -- Catch annotations from the third element of the pattern
 -- Give those annotations to the rearrange function
 -- NEW COST ANNOTATIONS: weight (#statement position [0..n], #cost)
-rnExpr (HsDo _ do_or_lc (L l stmts))
+rnExpr (HsDo first do_or_lc (L l stmts))
  = do { ((stmts1, _), fvs1) <-
           rnStmtsWithFreeNames (HsDoStmt do_or_lc) rnExpr stmts
             (\ _ -> return ((), emptyFNs))
-      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1
+      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1 ((extractFromFirst first) ++ (extractFromThird l))
       ; return ( HsDo noExtField do_or_lc (L l pp_stmts), fvs1 `plusFN` fvs2 ) }
 
 
@@ -1168,8 +1168,9 @@ rnStmts ctxt rnBody stmts thing_inside
 postProcessStmtsForApplicativeDo
   :: HsDoFlavour
   -> [(ExprLStmt GhcRn, FreeNames)]
+  -> [String]
   -> RnM ([ExprLStmt GhcRn], FreeNames)
-postProcessStmtsForApplicativeDo ctxt stmts
+postProcessStmtsForApplicativeDo ctxt stmts cmmnts
   = do {
        -- rearrange the statements using ApplicativeStmt if
        -- -XApplicativeDo is on.  Also strip out the FreeNames attached
@@ -1182,7 +1183,7 @@ postProcessStmtsForApplicativeDo ctxt stmts
        ; in_th_bracket <- isBrackLevel <$> getThLevel
        ; if ado_is_on && is_do_expr && not in_th_bracket
             then do { traceRn "ppsfa" (ppr stmts)
-                    ; rearrangeForApplicativeDo ctxt stmts }
+                    ; rearrangeForApplicativeDo ctxt stmts cmmnts}
             else noPostProcessStmts (HsDoStmt ctxt) stmts }
 
 -- | strip the FreeNames annotations from statements
@@ -2036,17 +2037,7 @@ ApplicativeDo touches a few phases in the compiler:
 Helper functions for weight annotations
 ***************************************
 -}
-parseWeightFromComments :: EpAnnComments -> Maybe Int
-parseWeightFromComments cs = listToMaybe (mapMaybe tryComment pcs) where
-  -- Get the comments previous to the statement (closest-first)
-  pcs :: [LEpaComment]
-  pcs = reverse (priorComments cs) --priorComments cs 
-  tryComment (L _ (EpaComment tok _)) = 
-    case tok of
-      EpaBlockComment s -> parseWeightFromString s
-      EpaLineComment  s -> parseWeightFromString s
-      _                 -> Nothing
-      
+
 trim :: String -> String
 trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
@@ -2064,9 +2055,9 @@ parseTuplePW s = ans where
 
 parsePosString :: String -> Maybe (Int, Int)
 -- Inline comment
-parsePosString ('-':s) = parseWeightFromString (trim (drop 1 s))
+parsePosString ('-':s) = parsePosString (trim (drop 1 s))
 -- Block comment
-parsePosString ('{':s) = parseWeightFromString (trim (reverse (drop 2 (reverse (drop 1 s)))))
+parsePosString ('{':s) = parsePosString (trim (reverse (drop 2 (reverse (drop 1 s)))))
 -- General case
 parsePosString s = 
   case (map (map toLower) (words s)) of 
@@ -2086,21 +2077,10 @@ extractEpaComments (L _ (EpaComment x _)) =
 
 extractFromFirst :: EpAnn -> [String]
 extractFromFirst (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
-extractFromFirst [] = []
+extractFromFirst _ = []
 
--- Old Parser (TO BE REMOVED)
-parseWeightFromString :: String -> Maybe Int
--- Inline comment
-parseWeightFromString ('-':s) = parseWeightFromString (trim (drop 1 s))
--- Block comment
-parseWeightFromString ('{':s) = parseWeightFromString (trim (reverse (drop 2 (reverse (drop 1 s)))))
--- If the string has the expected format, then get the cost
-parseWeightFromString s = 
-  case (map (map toLower) (words s)) of 
-    [x,y] -> if ((x == "weight") && (all isDigit y))
-             then (readMaybe y) :: Maybe Int
-             else Nothing
-    _     -> Nothing 
+-- extractFromThird ::
+extractFromThird (SrcSpanAnn x _) = extractFromFirst x
 
 -- *************************************************************
 
@@ -2123,12 +2103,13 @@ instance Outputable MonadNames where
 rearrangeForApplicativeDo
   :: HsDoFlavour
   -> [(ExprLStmt GhcRn, FreeNames)]
+  -> [String]
   -> RnM ([ExprLStmt GhcRn], FreeNames)
 
-rearrangeForApplicativeDo _ [] = return ([], emptyNameSet)
+rearrangeForApplicativeDo _ [] _ = return ([], emptyNameSet)
 -- If the do-block contains a single @return@ statement, change it to
 -- @pure@ if ApplicativeDo is turned on. See Note [ApplicativeDo].
-rearrangeForApplicativeDo ctxt [(one,_)] = do
+rearrangeForApplicativeDo ctxt [(one,_)] _ = do
   (return_name, _) <- lookupQualifiedDoName (HsDoStmt ctxt) returnMName
   (pure_name, _)   <- lookupQualifiedDoName (HsDoStmt ctxt) pureAName
   let monad_names = MonadNames { return_name = return_name
@@ -2136,9 +2117,9 @@ rearrangeForApplicativeDo ctxt [(one,_)] = do
   return $ case needJoin monad_names [one] (Just pure_name) of
     (False, one') -> (one', emptyNameSet)
     (True, _) -> ([one], emptyNameSet)
-rearrangeForApplicativeDo ctxt stmts0 = do
+rearrangeForApplicativeDo ctxt stmts0 cmmnts = do
   optimal_ado <- goptM Opt_OptimalApplicativeDo
-  let stmt_tree | optimal_ado = mkStmtTreeOptimal stmts
+  let stmt_tree | optimal_ado = mkStmtTreeOptimal stmts cmmnts
                 | otherwise = mkStmtTreeHeuristic stmts
   traceRn "rearrangeForADo" (ppr stmt_tree)
   (return_name, _) <- lookupQualifiedDoName (HsDoStmt ctxt) returnMName
@@ -2191,26 +2172,24 @@ mkStmtTreeHeuristic stmts =
 
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
-mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> ExprStmtTree
-mkStmtTreeOptimal stmts =
+mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> String -> ExprStmtTree
+mkStmtTreeOptimal stmts cmmnts =
   assert (not (null stmts)) $ -- the empty case is handled by the caller;
                               -- we don't support empty StmtTrees.
   fst (arr ! (0,n))
   where
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
-
-    -- compute the weight of a single statement
-    stmtWeight :: (ExprLStmt GhcRn, FreeNames) -> Cost
-    stmtWeight ((L loc _), _) =
-      case loc of
-        (EpAnn _ _ cs) ->
-          case parseWeightFromComments cs of
-            Just w | w > 0 -> w
-            _              -> 1
-        _              -> 1
     
-    cost_arr = listArray (0,n) (map stmtWeight stmts) --(replicate (n+1) 1)
+    weights = mapMaybe parsePosString cmmnts
+    
+    findCost :: Int -> [(Int,Int)] -> Int
+    findCost x ls = 
+      case (lookup x ls) of
+        (Just y) -> y
+        _        -> 1
+
+    cost_arr = listArray (0,n) [findCost i weights | i <- [0..n]]
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
