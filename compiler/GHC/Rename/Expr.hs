@@ -2031,7 +2031,11 @@ ApplicativeDo touches a few phases in the compiler:
 
 -}
 
--- Helper functions for weight annotations
+{- 
+***************************************
+Helper functions for weight annotations
+***************************************
+-}
 parseWeightFromComments :: EpAnnComments -> Maybe Int
 parseWeightFromComments cs = listToMaybe (mapMaybe tryComment pcs) where
   -- Get the comments previous to the statement (closest-first)
@@ -2073,6 +2077,17 @@ parsePosString s =
                else Nothing
     _     -> Nothing
 
+extractEpaComments :: LEpaComment -> String
+extractEpaComments (L _ (EpaComment x _)) =
+  case x of
+    EpaBlockComment s -> s
+    EpaLineComment  s -> s
+    _                 -> ""
+
+extractFromFirst :: EpAnn -> [String]
+extractFromFirst (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
+extractFromFirst [] = []
+
 -- Old Parser (TO BE REMOVED)
 parseWeightFromString :: String -> Maybe Int
 -- Inline comment
@@ -2086,6 +2101,8 @@ parseWeightFromString s =
              then (readMaybe y) :: Maybe Int
              else Nothing
     _     -> Nothing 
+
+-- *************************************************************
 
 -- | The 'Name's of @return@ and @pure@. These may not be 'returnName' and
 -- 'pureName' due to @QualifiedDo@ or @RebindableSyntax@.
