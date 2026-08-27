@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, dropWhile, reverse, drop)
+import Data.List (unzip4, dropWhile, reverse, drop, elemIndices)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -494,11 +494,12 @@ rnExpr (HsLet _ binds expr)
 -- Catch annotations from the third element of the pattern
 -- Give those annotations to the rearrange function
 -- NEW COST ANNOTATIONS: weight (#statement position [0..n], #cost)
-rnExpr (HsDo first do_or_lc (L l stmts))
+rnExpr (HsDo fpDo do_or_lc (L l stmts))
  = do { ((stmts1, _), fvs1) <-
           rnStmtsWithFreeNames (HsDoStmt do_or_lc) rnExpr stmts
             (\ _ -> return ((), emptyFNs))
-      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1 ((extractFromFirst first) ++ (extractFromThird l))
+      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1 (extractFromFirst l)
+      --((extractFromFirst fpDo) ++ (extractFromFirst l))
       ; return ( HsDo noExtField do_or_lc (L l pp_stmts), fvs1 `plusFN` fvs2 ) }
 
 
@@ -2044,9 +2045,9 @@ trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 -- New Parse String Function
 parseTuplePW :: String -> Maybe (Int, Int)
 parseTuplePW s = ans where
-  coPos = (elemIndeces ',' s) !! 0
+  coPos = (elemIndices ',' s) !! 0
   posS = trim (drop 1 (take coPos s))
-  wS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s)))
+  wS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
   ans | ((all isDigit posS) && (all isDigit posS)) =
         if (((read posS) >= 0) && ((read wS) > 0))
         then Just (read posS :: Int, read wS :: Int)
@@ -2075,12 +2076,12 @@ extractEpaComments (L _ (EpaComment x _)) =
     EpaLineComment  s -> s
     _                 -> ""
 
-extractFromFirst :: EpAnn -> [String]
+extractFromFirst :: EpAnn a -> [String]
 extractFromFirst (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
 extractFromFirst _ = []
 
 -- extractFromThird ::
-extractFromThird (SrcSpanAnn x _) = extractFromFirst x
+--extractFromThird x = extractFromFirst x
 
 -- *************************************************************
 
@@ -2172,7 +2173,7 @@ mkStmtTreeHeuristic stmts =
 
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
-mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> String -> ExprStmtTree
+mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
 mkStmtTreeOptimal stmts cmmnts =
   assert (not (null stmts)) $ -- the empty case is handled by the caller;
                               -- we don't support empty StmtTrees.
