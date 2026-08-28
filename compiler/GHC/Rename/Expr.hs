@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, dropWhile, reverse, drop, elemIndices)
+import Data.List (unzip4, dropWhile, reverse, drop, elemIndex)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -2042,10 +2042,23 @@ Helper functions for weight annotations
 trim :: String -> String
 trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
+checkTupleStruct :: String -> Bool
+checkTupleStruct s = 
+  case (elemIndex '(' s) of
+    Just x -> 
+      case (elemIndex ',' s) of
+        Just y -> 
+          case (elemIndex ')' s) of 
+            Just z -> (and [(x == 0), (x < y), (y < z), (z == ((length s) - 1))])
+            _      -> False
+        _      -> False
+    _      -> False
+
 -- New Parse String Function
 parseTuplePW :: String -> Maybe (Int, Int)
-parseTuplePW s = ans where
-  coPos = (elemIndices ',' s) !! 0
+parseTuplePW s | not (checkTupleStruct s) = Nothing 
+               | otherwise                = ans where
+  coPos = fromJust (elemIndex ',' s)
   posS = trim (drop 1 (take coPos s))
   wS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
   ans | ((all isDigit posS) && (all isDigit posS)) =
