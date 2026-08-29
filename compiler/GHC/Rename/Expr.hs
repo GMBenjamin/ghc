@@ -489,17 +489,12 @@ rnExpr (HsLet _ binds expr)
       { (expr',fvExpr) <- rnLExpr expr
       ; return (HsLet noExtField binds' expr', fvExpr) }
 
--- Modify HsDo pattern matching
--- Catch annotations from the first element of the pattern
--- Catch annotations from the third element of the pattern
--- Give those annotations to the rearrange function
 -- NEW COST ANNOTATIONS: weight (#statement position [0..n], #cost)
-rnExpr (HsDo fpDo do_or_lc (L l stmts))
+rnExpr (HsDo _ do_or_lc (L l stmts))
  = do { ((stmts1, _), fvs1) <-
           rnStmtsWithFreeNames (HsDoStmt do_or_lc) rnExpr stmts
             (\ _ -> return ((), emptyFNs))
-      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1 (extractFromFirst l)
-      --((extractFromFirst fpDo) ++ (extractFromFirst l))
+      ; (pp_stmts, fvs2) <- postProcessStmtsForApplicativeDo do_or_lc stmts1 (extractFromEpAnn l)
       ; return ( HsDo noExtField do_or_lc (L l pp_stmts), fvs1 `plusFN` fvs2 ) }
 
 
@@ -2054,7 +2049,6 @@ checkTupleStruct s =
         _      -> False
     _      -> False
 
--- New Parse String Function
 parseTuplePW :: String -> Maybe (Int, Int)
 parseTuplePW s | not (checkTupleStruct s) = Nothing 
                | otherwise                = ans where
@@ -2075,7 +2069,7 @@ parsePosString ('{':s) = parsePosString (trim (reverse (drop 2 (reverse (drop 1 
 -- General case
 parsePosString s = 
   case (map (map toLower) (words s)) of 
-    (x:y) -> if (x == "weight")
+    (x:_) -> if (x == "weight")
              then parseTuplePW (trim (drop 6 (trim s)))
              else if (x == "weight:")
                then parseTuplePW (trim (drop 7 (trim s)))
@@ -2089,12 +2083,10 @@ extractEpaComments (L _ (EpaComment x _)) =
     EpaLineComment  s -> s
     _                 -> ""
 
-extractFromFirst :: EpAnn a -> [String]
-extractFromFirst (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
-extractFromFirst _ = []
+extractFromEpAnn :: EpAnn a -> [String]
+extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
+extractFromEpAnn _ = []
 
--- extractFromThird ::
---extractFromThird x = extractFromFirst x
 
 -- *************************************************************
 
