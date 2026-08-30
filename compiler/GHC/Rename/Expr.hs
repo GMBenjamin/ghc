@@ -2055,7 +2055,7 @@ parseTuplePW s | not (checkTupleStruct s) = Nothing
   coPos = fromJust (elemIndex ',' s)
   posS = trim (drop 1 (take coPos s))
   wS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
-  ans | ((all isDigit posS) && (all isDigit posS)) =
+  ans | ((all isDigit posS) && (all isDigit wS)) =
         if (((read posS) >= 0) && ((read wS) > 0))
         then Just (read posS :: Int, read wS :: Int)
         else Nothing
