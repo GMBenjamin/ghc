@@ -2018,6 +2018,147 @@ ApplicativeDo touches a few phases in the compiler:
 
 -}
 
+{- 
+***************************************
+Helper functions for weight annotations
+***************************************
+-}
+
+-- Check Tuple *****
+
+trim :: String -> String
+trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
+
+checkTupleStruct :: String -> Bool
+checkTupleStruct s = 
+  case (elemIndex '(' s) of
+    Just x -> 
+      case (elemIndex ',' s) of
+        Just y -> 
+          case (elemIndex ')' s) of 
+            Just z -> (and [(x == 0), (x < y), (y < z), (z == ((length s) - 1))])
+            _      -> False
+        _      -> False
+    _      -> False
+
+-- CRS *****
+
+wellWrittenParenthesis :: String -> Bool
+wellWrittenParenthesis s = something where
+  open = elemIndices '(' s
+  close = elemIndices ')' s
+  something | (length open) /= (length close) = False
+            | otherwise = 
+                case (open,close) of
+                  ([],[])   -> True
+                  ([x],[y]) -> (x < y)
+                  _         ->  and [(length (dropWhile (<= (open !! p)) close)) >= (tot - p) | p <- pos]
+  tot = length open                     
+  pos = [0..tot-1]
+
+-- closingParenthesis :: looking position -> opened -> string
+-- The function is executed iff every parenthesis has a closure.
+closingParenthesis :: Int -> Int -> String -> Int
+closingParenthesis lp o [x] | ((x == ')') && (o == 1)) = lp
+                            | otherwise                = -1
+closingParenthesis lp o (x:xs) | ((x == ')') && (o == 1)) = lp
+                               | (x == ')') = closingParenthesis (lp + 1) (o - 1) xs
+                               | (x == '(') = closingParenthesis (lp + 1) (o + 1) xs
+                               | otherwise  = closingParenthesis (lp + 1) o xs
+
+isTerm :: String -> Bool
+isTerm s = ((s == "x") || (isNumbers s))
+
+isOperator :: String -> Bool
+isOperator s = ((s == "+") || (s == "*"))
+
+isNumbers :: String -> Bool
+isNumbers s = (all isDigit s)
+
+isPower :: String -> Bool
+isPower s = (s == "^")
+
+checkNoParenthesisCRS :: String -> Bool
+checkNoParenthesisCRS s = intercalateOp separated 0 False where
+  separated = words s
+  intercalateOp :: [String] -> Int -> Bool -> Bool
+  intercalateOp [] n _ = if (even n) then False else True
+  intercalateOp [x] n b = if (even n) 
+                          then (if b then (isNumbers x) else (isTerm x)) 
+                          else False
+  intercalateOp (x:xs) n b = if (even n) 
+                             then ((if b then (isNumbers x) else (isTerm x))
+                                   && (intercalateOp xs (n + 1) False))
+                             else (if (isPower x)
+                                   then (intercalateOp xs (n + 1) True)
+                                   else ((isOperator x) && (intercalateOp xs (n + 1) False)))
+
+replaceInnerParenthesis :: String -> String
+replaceInnerParenthesis s = 
+  case (elemIndices '(' s) of
+    [] -> s
+    (i:_) -> replaceInnerParenthesis new_s where
+      close = closingParenthesis (i + 1) 1 (drop (i + 1) s)
+      new_s = (take i s) ++ "x" ++ (drop (close + 1) s)
+
+crsCheck :: String -> Bool
+crsCheck s | (isTerm s) = True
+           | otherwise  = ans where
+  temp = elemIndices '(' s
+  ans = case temp of
+    [] -> checkNoParenthesisCRS s
+    _  | not (wellWrittenParenthesis s) -> False
+       | otherwise -> all checkNoParenthesisCRS msubs
+  pairs = [(t, (closingParenthesis (t + 1) 1 (drop (t + 1) s))) | t <- temp]
+  subs = [take (c - t - 1) (drop (t + 1) s) | (t,c) <- pairs] ++ [s]
+  msubs = [replaceInnerParenthesis oldsub | oldsub <- subs]
+
+-- Read Tuple *****
+
+-- ADD: UPPER LIMIT (n)
+parseTuplePW :: String -> Maybe (Int, String)
+parseTuplePW s | not (checkTupleStruct s) = Nothing 
+               | otherwise                = ans where
+  coPos = fromJust (elemIndex ',' s)
+  posS = trim (drop 1 (take coPos s))
+  crsS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
+  ans | ((isNumbers posS) && (crsCheck crsS)) =
+        if ((read posS) >= 0)
+        then Just (read posS :: Int, crsS)
+        else Nothing
+      | otherwise = Nothing
+
+-- Extract Weight *****
+
+parsePosString :: String -> Maybe (Int, Int)
+-- Inline comment
+parsePosString ('-':s) = parsePosString (trim (drop 1 s))
+-- Block comment
+parsePosString ('{':s) = parsePosString (trim (reverse (drop 2 (reverse (drop 1 s)))))
+-- General case
+parsePosString s = 
+  case (map (map toLower) (words s)) of 
+    (x:_) -> if (x == "weight")
+             then parseTuplePW (trim (drop 6 (trim s)))
+             else if (x == "weight:")
+               then parseTuplePW (trim (drop 7 (trim s)))
+               else Nothing
+    _     -> Nothing
+
+extractEpaComments :: LEpaComment -> String
+extractEpaComments (L _ (EpaComment x _)) =
+  case x of
+    EpaBlockComment s -> s
+    EpaLineComment  s -> s
+    _                 -> ""
+
+extractFromEpAnn :: EpAnn a -> [String]
+extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
+extractFromEpAnn _ = []
+
+-- *************************************************************
+
+
 -- | The 'Name's of @return@ and @pure@. These may not be 'returnName' and
 -- 'pureName' due to @QualifiedDo@ or @RebindableSyntax@.
 data MonadNames = MonadNames { return_name, pure_name :: Name }
