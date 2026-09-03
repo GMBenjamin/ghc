@@ -2274,11 +2274,73 @@ mkStmtTreeHeuristic stmts =
 
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
+
+solveNoSymbolic :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, Int)] -> ExprStmtTree
+solveNoSymbolic stmts weights =
+  assert (not (null stmts)) $ fst (arr ! (0,n))
+  -- the empty case is handled by the caller; No support for empty StmtTrees.
+  where
+    n = length stmts - 1
+    stmt_arr = listArray (0,n) stmts
+    
+    findCost :: Int -> [(Int,Int)] -> Int
+    findCost x ls = 
+      case (lookup x ls) of
+        (Just y) -> y
+        _        -> 1
+
+    cost_arr = listArray (0,n) [findCost i weights | i <- [0..n]]
+
+    -- lazy cache of optimal trees for subsequences of the input
+    arr :: Array (Int,Int) (ExprStmtTree, Cost)
+    arr = array ((0,0),(n,n))
+             [ ((lo,hi), tree lo hi)
+             | lo <- [0..n]
+             , hi <- [lo..n] ]
+
+    -- compute the optimal tree for the sequence [lo..hi]
+    tree lo hi
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
+      | otherwise =
+         case segments [ stmt_arr ! i | i <- [lo..hi] ] of
+           [] -> panic "mkStmtTree"
+           [_one] -> split lo hi
+           segs -> (StmtTreeApplicative trees, Partial.maximum costs)
+             where
+               bounds = scanl (\(_,hi) a -> (hi+1, hi + length a)) (0,lo-1) segs
+               -- We know `costs` must be non-empty, as `length segs >= 2` here.
+               (trees,costs) = unzip (map (uncurry split) (tail bounds))
+
+    -- find the best place to split the segment [lo..hi]
+    split :: Int -> Int -> (ExprStmtTree, Cost)
+    split lo hi
+      | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
+      | otherwise = (StmtTreeBind before after, c1+c2)
+        where
+         -- As per the paper, for a sequence s1...sn, we want to find
+         -- the split with the minimum cost, where the cost is the
+         -- sum of the cost of the left and right subsequences.
+         --
+         -- ***Hubinette and Thune 3.1.1
+         --
+         ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
+             Nothing ->
+               ( (StmtTreeOne (stmt_arr ! lo), loCost),
+                 (StmtTreeOne (stmt_arr ! hi), hiCost) ) -- ***Hubinette and Thune 3.1.1
+             Just ks ->
+               minimumBy (comparing cost) [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
+           where
+             cost ((_,c1),(_,c2)) = c1 + c2
+             loCost = (cost_arr ! lo)
+             hiCost = (cost_arr ! hi)
+
 mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
 mkStmtTreeOptimal stmts cmmnts =
-  assert (not (null stmts)) $ -- the empty case is handled by the caller;
-                              -- we don't support empty StmtTrees.
-  fst (arr ! (0,n))
+  case weights of
+    [] -> solveNoSymbolic stmts []
+    _  -> if (all (\(_,c) -> (isNumbers c)) weights)
+          then solveNoSymbolic stmts (map (\(p,c) -> (p, read c :: Int)) weights)
+          else assert (not (null stmts)) $ fst (arr ! (0,n)) -- No empty case
   where
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
