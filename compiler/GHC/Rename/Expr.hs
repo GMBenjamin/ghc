@@ -2256,6 +2256,16 @@ mkStmtTreeOptimal stmts =
   where
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
+    
+    -- Generate all combinations
+    -- Extract the cost function of each combination
+    -- Ask Wolfram for the asympotitical optimum
+    -- Recover the combination from Wolfram's answer
+    -- Generate the final tree
+    
+    -- Explore the option of using the segments function
+    -- segs = segments [ stmt_arr ! i | i <- [0..n] ]
+    -- One segment => No independency
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
