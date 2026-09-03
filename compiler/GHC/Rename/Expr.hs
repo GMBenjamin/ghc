@@ -2158,6 +2158,29 @@ extractFromEpAnn :: EpAnn a -> [String]
 extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
 extractFromEpAnn _ = []
 
+-- Cost extraction/generation *****
+
+getCostOfSegement :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, String)] -> Int -> (String, Int)
+getCostOfSegement [x] costs pos = 
+  case (lookup pos costs) of
+    (Just c) -> (c, (pos + 1))
+    _        -> ("1", (pos + 1))
+getCostOfSegement (x:y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
+  where
+    (cx, px) = getCostOfSegment [x] costs pos
+    (cy, py) = getCostOfSegment y costs px
+
+getCostList :: [[(ExprLStmt GhcRn, FreeNames)]] -> [(Int, String)] -> Int -> [String]
+getCostList [x] costs pos = [first (getCostOfSegement [x] costs pos)]
+getCostList (x:y) costs pos = (cx:rest)
+  where
+    (cx, px) = getCostOfSegement [x] costs pos
+    rest = getCostList y costs px
+
+getTotalCost :: [String] -> String
+getTotalCost [x] = x
+getTotalCost xs = "MAX[" ++ (intercalate ", " xs) ++ "]" --()
+
 -- *************************************************************
 
 
