@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, elemIndex, elemIndices)
+import Data.List (unzip4, elemIndex, elemIndices, intercalate)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -2160,26 +2160,26 @@ extractFromEpAnn _ = []
 
 -- Cost extraction/generation *****
 
-getCostOfSegement :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, String)] -> Int -> (String, Int)
-getCostOfSegement [x] costs pos = 
+getCostOfSegment :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, String)] -> Int -> (String, Int)
+getCostOfSegment [x] costs pos = 
   case (lookup pos costs) of
     (Just c) -> (c, (pos + 1))
     _        -> ("1", (pos + 1))
-getCostOfSegement (x:y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
+getCostOfSegment (x:y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
   where
     (cx, px) = getCostOfSegment [x] costs pos
     (cy, py) = getCostOfSegment y costs px
 
 getCostList :: [[(ExprLStmt GhcRn, FreeNames)]] -> [(Int, String)] -> Int -> [String]
-getCostList [x] costs pos = [first (getCostOfSegement [x] costs pos)]
+getCostList [x] costs pos = [(\(a,_) -> a) (getCostOfSegment x costs pos)]
 getCostList (x:y) costs pos = (cx:rest)
   where
-    (cx, px) = getCostOfSegement [x] costs pos
+    (cx, px) = getCostOfSegment x costs pos
     rest = getCostList y costs px
 
 getTotalCost :: [String] -> String
 getTotalCost [x] = x
-getTotalCost xs = "MAX[" ++ (intercalate ", " xs) ++ "]" --()
+getTotalCost xs = "MAX[" ++ (intercalate ", " xs) ++ "]"
 
 -- *************************************************************
 
