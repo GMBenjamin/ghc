@@ -71,13 +71,15 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4)
+import Data.List (unzip4, elemIndex, elemIndices)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
 import Data.Array
 import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
+import Data.Char (isSpace, toLower, isDigit)
+import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, EpaComment(..), EpaCommentTok(..))
 
 {- Note [Handling overloaded and rebindable constructs]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2130,7 +2132,7 @@ parseTuplePW s | not (checkTupleStruct s) = Nothing
 
 -- Extract Weight *****
 
-parsePosString :: String -> Maybe (Int, Int)
+parsePosString :: String -> Maybe (Int, String)
 -- Inline comment
 parsePosString ('-':s) = parsePosString (trim (drop 1 s))
 -- Block comment
