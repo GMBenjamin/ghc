@@ -2119,7 +2119,8 @@ crsCheck s | (isTerm s) = True
 
 -- Read Tuple *****
 
--- ADD: UPPER LIMIT (n)
+-- There is no need for checking the upper limit.
+-- ADO would never try to find the cost of a stmt over the limit.
 parseTuplePW :: String -> Maybe (Int, String)
 parseTuplePW s | not (checkTupleStruct s) = Nothing 
                | otherwise                = ans where
@@ -2181,7 +2182,7 @@ getCostList (x:y) costs pos = (cx:rest)
 
 getTotalCost :: [String] -> String
 getTotalCost [x] = x
-getTotalCost xs = "MAX[" ++ (intercalate ", " xs) ++ "]"
+getTotalCost xs = "Max[" ++ (intercalate ", " xs) ++ "]"
 
 -- *************************************************************
 
@@ -2347,19 +2348,28 @@ mkStmtTreeOptimal stmts cmmnts =
     
     weights = mapMaybe parsePosString cmmnts
     
-    -- Get the cost list of every statement
-    -- If each cost is a constant, solve without calling Wolfram
-    -- ELSE:
-    -- Generate all combinations
-    -- Extract the cost function of each combination
+    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[(ExprLStmt GhcRn, FreeNames)]]
+    getCombinations [x] = [x]
+    getCombinations xstmts | (length sgx) == (length xstmts) = sgx
+                           | (length sgx) == 1               = [xstmts] -- TO DO
+                           | otherwise                       = [xstmts] -- TO DO
+      where
+        sgx = segments xstmts
+        -- If (length sgx) == 1 There are no independent statements
+        -- Generate all prefixes and suffixes
+        -- Recursively getCombinations in each prefix and suffix
+        -- Combine (append)
+        
+        -- Else: There are independent groups
+        -- Recursively getCombinations in each group
+        -- Combine (append)
+    
+    --allComb = getCombinations stmts
+    --costfuns = [getTotalCost (getCostList a weights 0) | a <- allComb]
+    -- ROADMAP:
     -- Ask Wolfram for the asympotitical optimum
     -- Recover the combination from Wolfram's answer
     -- Generate the final tree
-    
-    -- Explore the option of using the segments function
-    -- segs = segments [ stmt_arr ! i | i <- [0..n] ]
-    -- One segment => No independency
-    -- length segs == length stmts => Fully independent
 
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Cost)
