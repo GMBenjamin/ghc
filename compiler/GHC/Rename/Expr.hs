@@ -2186,6 +2186,28 @@ getTotalCost :: [String] -> String
 getTotalCost [x] = x
 getTotalCost xs = "Max[" ++ (intercalate ", " xs) ++ "]"
 
+getCostsFromList :: [ExprStmtTree] -> [(Int, String)] -> Int -> [String] -> ([String], Int)
+getCostsFromList [x] costs pos acc = 
+  case getTreeCost x costs pos of
+    (s, p) -> (acc ++ [s], p)
+    _      -> panic "getCostsFromList"
+getCostsFromList (x:y) costs pos acc = getCostsFromList y costs px (acc ++ [cx]) where
+  (cx, px) = getTreeCost x costs pos
+
+getTreeCost :: ExprStmtTree -> [(Int, String)] -> Int -> (String, Int)
+getTreeCost (StmtTreeOne _) costs pos =  
+  case (lookup pos costs) of
+    (Just c) -> (c, (pos + 1))
+    _        -> ("1", (pos + 1))
+getTreeCost (StmtTreeBind x y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
+  where
+    (cx, px) = getTreeCost x costs pos
+    (cy, py) = getTreeCost y costs px
+getTreeCost (StmtTreeApplicative ls) costs pos = ("Max[" ++ clist ++ "]", pl) where
+  (rcost, pl) = getCostsFromList ls costs pos []
+  clist = intercalate ", " rcost
+
+
 -- Wolfram Interface *****
 
 buildWolfram :: [String] -> String
@@ -2362,13 +2384,22 @@ mkStmtTreeOptimal stmts cmmnts =
     
     weights = mapMaybe parsePosString cmmnts
     
-    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[(ExprLStmt GhcRn, FreeNames)]]
-    getCombinations [x] = [[x]]
-    getCombinations xstmts | (length sgx) == (length xstmts) = sgx
-                           | (length sgx) == 1               = [xstmts] -- TO DO
-                           | otherwise                       = [xstmts] -- TO DO
+    --getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree] (?)
+    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[[(ExprLStmt GhcRn, FreeNames)]]]
+    getCombinations [x] = [[[x]]]
+    getCombinations xstmts | (length sgx) == (length xstmts) = [sgx]
+                           | (length sgx) == 1               = [[xstmts]] -- TO DO
+                           | otherwise                       = 
+                               case (map getCombinations sgx) of
+                                 (y:z) -> combSegs y z
+                                 _     -> panic "getCombinatios"
       where
         sgx = segments xstmts
+        combSegs :: [[[(ExprLStmt GhcRn, FreeNames)]]] -> 
+                    [[[[(ExprLStmt GhcRn, FreeNames)]]]] -> 
+                    [[[(ExprLStmt GhcRn, FreeNames)]]]
+        combSegs acc [ls] = [a ++ l | a <- acc, l <- ls]
+        combSegs acc (ls:lss) = combSegs [a ++ l | a <- acc, l <- ls] lss
         -- If (length sgx) == 1 There are no independent statements
         -- Generate all prefixes and suffixes
         -- Recursively getCombinations in each prefix and suffix
