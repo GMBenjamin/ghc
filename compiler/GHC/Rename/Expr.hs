@@ -2363,7 +2363,7 @@ mkStmtTreeOptimal stmts cmmnts =
     weights = mapMaybe parsePosString cmmnts
     
     getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[(ExprLStmt GhcRn, FreeNames)]]
-    getCombinations [x] = [x]
+    getCombinations [x] = [[x]]
     getCombinations xstmts | (length sgx) == (length xstmts) = sgx
                            | (length sgx) == 1               = [xstmts] -- TO DO
                            | otherwise                       = [xstmts] -- TO DO
