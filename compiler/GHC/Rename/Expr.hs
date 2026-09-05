@@ -80,6 +80,8 @@ import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 import Data.Char (isSpace, toLower, isDigit)
 import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, EpaComment(..), EpaCommentTok(..))
+import System.Process (readProcess)
+import System.IO.Unsafe
 
 {- Note [Handling overloaded and rebindable constructs]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2183,6 +2185,18 @@ getCostList (x:y) costs pos = (cx:rest)
 getTotalCost :: [String] -> String
 getTotalCost [x] = x
 getTotalCost xs = "Max[" ++ (intercalate ", " xs) ++ "]"
+
+-- Wolfram Interface *****
+
+buildWolfram :: [String] -> String
+buildWolfram css = wolfram where
+  funs = "functions = {" ++ (intercalate ", " css) ++ "};"
+  def = "dFun = First[SortBy[functions, With[{s = Asymptotic[#, x -> Infinity]}, {Exponent[s, x], Coefficient[s, x, Exponent[s, x]]}] &]];"
+  query = "FirstPosition[functions, dFun]"
+  wolfram = funs ++ "\n" ++ def ++ "\n" ++ query ++ "\n"
+
+askWolfram :: String -> String
+askWolfram query = unsafePerformIO (readProcess "wolframscript" ["-code", query] "")
 
 -- *************************************************************
 
