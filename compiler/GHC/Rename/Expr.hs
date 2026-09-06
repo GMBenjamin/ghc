@@ -2199,7 +2199,7 @@ getTreeCost (StmtTreeOne _) costs pos =
   case (lookup pos costs) of
     (Just c) -> (c, (pos + 1))
     _        -> ("1", (pos + 1))
-getTreeCost (StmtTreeBind x y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
+getTreeCost (StmtTreeBind x y) costs pos = (("(" ++ cx ++ ") + (" ++ cy ++ ")"), py)
   where
     (cx, px) = getTreeCost x costs pos
     (cy, py) = getTreeCost y costs px
@@ -2384,7 +2384,19 @@ mkStmtTreeOptimal stmts cmmnts =
     
     weights = mapMaybe parsePosString cmmnts
     
-    --getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree] (?)
+    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree]
+    getCombinations [x] = [(StmtTreeOne x)]
+    getCombinations xstmts | (length sgx) == (length xstmts) = 
+        (StmtTreeApplicative [ (StmtTreeOne xs) | xs <- xstmts ])
+                           -- | (length sgx) == 1               = -- TO BE DONE
+                           | otherwise                       =
+        [ (StmtTreeApplicative x) | x <- (appendSegs (map getCombinations sgx)) ]
+      where
+        sgx = segments xstmts
+        appendSegs :: [[ExprStmtTree]] -> [[ExprStmtTree]]
+        appendSegs [ls] = [ls]
+        appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
+    {-
     getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[[(ExprLStmt GhcRn, FreeNames)]]]
     getCombinations [x] = [[[x]]]
     getCombinations xstmts | (length sgx) == (length xstmts) = [sgx]
@@ -2400,6 +2412,7 @@ mkStmtTreeOptimal stmts cmmnts =
                     [[[(ExprLStmt GhcRn, FreeNames)]]]
         combSegs acc [ls] = [a ++ l | a <- acc, l <- ls]
         combSegs acc (ls:lss) = combSegs [a ++ l | a <- acc, l <- ls] lss
+    -}
         -- If (length sgx) == 1 There are no independent statements
         -- Generate all prefixes and suffixes
         -- Recursively getCombinations in each prefix and suffix
