@@ -2394,7 +2394,10 @@ mkStmtTreeOptimal stmts cmmnts =
       where
         sgx = segments xstmts
         appendSegs :: [[ExprStmtTree]] -> [[ExprStmtTree]]
-        appendSegs [ls] = [ls]
+        appendSegs [ls] = separate ls where
+          separate [ExprStmtTree] -> [[ExprStmtTree]]
+          separate [l] = [[l]]
+          separate (l1:ll) = [[l1]] ++ (separate ll)
         appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
     {-
     getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[[(ExprLStmt GhcRn, FreeNames)]]]
