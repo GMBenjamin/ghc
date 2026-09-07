@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, elemIndex, elemIndices, intercalate, concat, inits, tails, null)
+import Data.List (unzip4, elemIndex, elemIndices, intercalate, inits, tails)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -2199,6 +2199,10 @@ buildWolfram css = wolfram where
 askWolfram :: String -> String
 askWolfram query = unsafePerformIO (readProcess "wolframscript" ["-code", query] "")
 
+parseWolfram :: String -> Int
+parseWolfram ('M':_) = -1
+parseWolfram s = read (trim (reverse (drop 1 (reverse (drop 1 (trim s)))))) - 1
+
 -- *************************************************************
 
 
@@ -2319,7 +2323,7 @@ solveNoSymbolic stmts weights =
       | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
       | otherwise =
          case segments [ stmt_arr ! i | i <- [lo..hi] ] of
-           [] -> panic "mkStmtTree"
+           [] -> panic "solveNoSymbolic"
            [_one] -> split lo hi
            segs -> (StmtTreeApplicative trees, Partial.maximum costs)
              where
@@ -2351,16 +2355,19 @@ solveNoSymbolic stmts weights =
              hiCost = (cost_arr ! hi)
 
 mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
-mkStmtTreeOptimal stmts cmmnts =
+mkStmtTreeOptimal stmts cmmnts = assert (not (null stmts)) $ -- No empty case
   case weights of
     [] -> solveNoSymbolic stmts []
     _  -> if (all (\(_,c) -> (isNumbers c)) weights)
           then solveNoSymbolic stmts (map (\(p,c) -> (p, read c :: Int)) weights)
-          else assert (not (null stmts)) $ fst (arr ! (0,n)) -- No empty case
+          else 
+            (case allComb of
+              [x] -> x
+              _   -> 
+                if (finalPosition < 0)
+                then panic "mkStmtTree"
+                else (allComb !! finalPosition))
   where
-    n = length stmts - 1
-    stmt_arr = listArray (0,n) stmts
-    
     weights = mapMaybe parsePosString cmmnts
     
     getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree]
@@ -2385,64 +2392,11 @@ mkStmtTreeOptimal stmts cmmnts =
     
     allComb = getCombinations stmts
     
-    --costfuns = [ ((\(x, _) -> x) (getTreeCost a weights 0)) | a <- allComb]
-    -- ROADMAP:
-    -- Ask Wolfram for the asympotitical optimum
-    -- Recover the combination from Wolfram's answer
-    -- Generate the final tree
-
-    -- lazy cache of optimal trees for subsequences of the input
-    arr :: Array (Int,Int) (ExprStmtTree, Cost)
-    arr = array ((0,0),(n,n))
-             [ ((lo,hi), tree lo hi)
-             | lo <- [0..n]
-             , hi <- [lo..n] ]
-
-    -- compute the optimal tree for the sequence [lo..hi]
-    tree lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), 1)
-      | otherwise =
-         case segments [ stmt_arr ! i | i <- [lo..hi] ] of
-           [] -> panic "mkStmtTree"
-           [_one] -> split lo hi
-           segs -> (StmtTreeApplicative trees, Partial.maximum costs)
-             where
-               bounds = scanl (\(_,hi) a -> (hi+1, hi + length a)) (0,lo-1) segs
-               -- We know `costs` must be non-empty, as `length segs >= 2` here.
-               (trees,costs) = unzip (map (uncurry split) (tail bounds))
-
-    -- find the best place to split the segment [lo..hi]
-    split :: Int -> Int -> (ExprStmtTree, Cost)
-    split lo hi
-      | hi == lo = (StmtTreeOne (stmt_arr ! lo), 1)
-      | otherwise = (StmtTreeBind before after, c1+c2)
-        where
-         -- As per the paper, for a sequence s1...sn, we want to find
-         -- the split with the minimum cost, where the cost is the
-         -- sum of the cost of the left and right subsequences.
-         --
-         -- As an optimisation (also in the paper) if the cost of
-         -- s1..s(n-1) is different from the cost of s2..sn, we know
-         -- that the optimal solution is the lower of the two.  Only
-         -- in the case that these two have the same cost do we need
-         -- to do the exhaustive search.
-         --
-         ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
-             Nothing ->
-               ( (StmtTreeOne (stmt_arr ! lo), 1),
-                 (StmtTreeOne (stmt_arr ! hi), 1) )
-             Just ks
-               | left_cost < right_cost
-               -> ((left,left_cost), (StmtTreeOne (stmt_arr ! hi), 1))
-               | left_cost > right_cost
-               -> ((StmtTreeOne (stmt_arr ! lo), 1), (right,right_cost))
-               | otherwise -> minimumBy (comparing cost)
-                 [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
-           where
-             (left, left_cost) = arr ! (lo,hi-1)
-             (right, right_cost) = arr ! (lo+1,hi)
-             cost ((_,c1),(_,c2)) = c1 + c2
-
+    costFuns = [ ((\(x, _) -> x) (getTreeCost a weights 0)) | a <- allComb ]
+    
+    query = buildWolfram costFuns
+    
+    finalPosition = parseWolfram (askWolfram query)
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
