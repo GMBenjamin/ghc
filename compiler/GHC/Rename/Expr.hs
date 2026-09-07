@@ -2387,15 +2387,19 @@ mkStmtTreeOptimal stmts cmmnts =
     getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree]
     getCombinations [x] = [(StmtTreeOne x)]
     getCombinations xstmts | (length sgx) == (length xstmts) = 
-        (StmtTreeApplicative [ (StmtTreeOne xs) | xs <- xstmts ])
-                           -- | (length sgx) == 1               = -- TO BE DONE
+        [(StmtTreeApplicative [ (StmtTreeOne xs) | xs <- xstmts ])]
+                           -- | (length sgx) == 1               =
+                           -- If (length sgx) == 1 There are no independent statements
+                           -- Generate all prefixes and suffixes
+                           -- Recursively getCombinations in each prefix and suffix
+                           -- Combine (append)
                            | otherwise                       =
         [ (StmtTreeApplicative x) | x <- (appendSegs (map getCombinations sgx)) ]
       where
         sgx = segments xstmts
         appendSegs :: [[ExprStmtTree]] -> [[ExprStmtTree]]
         appendSegs [ls] = separate ls where
-          separate [ExprStmtTree] -> [[ExprStmtTree]]
+          separate :: [ExprStmtTree] -> [[ExprStmtTree]]
           separate [l] = [[l]]
           separate (l1:ll) = [[l1]] ++ (separate ll)
         appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
@@ -2416,14 +2420,6 @@ mkStmtTreeOptimal stmts cmmnts =
         combSegs acc [ls] = [a ++ l | a <- acc, l <- ls]
         combSegs acc (ls:lss) = combSegs [a ++ l | a <- acc, l <- ls] lss
     -}
-        -- If (length sgx) == 1 There are no independent statements
-        -- Generate all prefixes and suffixes
-        -- Recursively getCombinations in each prefix and suffix
-        -- Combine (append)
-        
-        -- Else: There are independent groups
-        -- Recursively getCombinations in each group
-        -- Combine (append)
     
     --allComb = getCombinations stmts
     --costfuns = [getTotalCost (getCostList a weights 0) | a <- allComb]
