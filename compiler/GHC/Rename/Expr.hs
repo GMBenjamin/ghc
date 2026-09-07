@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, elemIndex, elemIndices, intercalate)
+import Data.List (unzip4, elemIndex, elemIndices, intercalate, concat, inits, tails, null)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -2165,29 +2165,6 @@ extractFromEpAnn _ = []
 
 -- Cost extraction/generation *****
 
-{-
-getCostOfSegment :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, String)] -> Int -> (String, Int)
-getCostOfSegment [x] costs pos = 
-  case (lookup pos costs) of
-    (Just c) -> (c, (pos + 1))
-    _        -> ("1", (pos + 1))
-getCostOfSegment (x:y) costs pos = (("(" ++ cx ++ ") + " ++ cy), py)
-  where
-    (cx, px) = getCostOfSegment [x] costs pos
-    (cy, py) = getCostOfSegment y costs px
-
-getCostList :: [[(ExprLStmt GhcRn, FreeNames)]] -> [(Int, String)] -> Int -> [String]
-getCostList [x] costs pos = [(\(a,_) -> a) (getCostOfSegment x costs pos)]
-getCostList (x:y) costs pos = (cx:rest)
-  where
-    (cx, px) = getCostOfSegment x costs pos
-    rest = getCostList y costs px
-
-getTotalCost :: [String] -> String
-getTotalCost [x] = x
-getTotalCost xs = "Max[" ++ (intercalate ", " xs) ++ "]"
--}
-
 getCostsFromList :: [ExprStmtTree] -> [(Int, String)] -> Int -> [String] -> ([String], Int)
 getCostsFromList [x] costs pos acc = (acc ++ [s], p) where
   (s, p) = getTreeCost x costs pos
@@ -2390,11 +2367,8 @@ mkStmtTreeOptimal stmts cmmnts =
     getCombinations [x] = [(StmtTreeOne x)]
     getCombinations xstmts | (length sgx) == (length xstmts) = 
         [(StmtTreeApplicative [ (StmtTreeOne xs) | xs <- xstmts ])]
-                           -- | (length sgx) == 1               =
-                           -- If (length sgx) == 1 There are no independent statements
-                           -- Generate all prefixes and suffixes
-                           -- Recursively getCombinations in each prefix and suffix
-                           -- Combine (append)
+                           | (length sgx) == 1               =
+        (concat seqAll)
                            | otherwise                       =
         [ (StmtTreeApplicative x) | x <- (appendSegs (map getCombinations sgx)) ]
       where
@@ -2405,26 +2379,13 @@ mkStmtTreeOptimal stmts cmmnts =
           separate [l] = [[l]]
           separate (l1:ll) = [[l1]] ++ (separate ll)
         appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
-    {-
-    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [[[(ExprLStmt GhcRn, FreeNames)]]]
-    getCombinations [x] = [[[x]]]
-    getCombinations xstmts | (length sgx) == (length xstmts) = [sgx]
-                           | (length sgx) == 1               = [[xstmts]] -- TO DO
-                           | otherwise                       = 
-                               case (map getCombinations sgx) of
-                                 (y:z) -> combSegs y z
-                                 _     -> panic "getCombinatios"
-      where
-        sgx = segments xstmts
-        combSegs :: [[[(ExprLStmt GhcRn, FreeNames)]]] -> 
-                    [[[[(ExprLStmt GhcRn, FreeNames)]]]] -> 
-                    [[[(ExprLStmt GhcRn, FreeNames)]]]
-        combSegs acc [ls] = [a ++ l | a <- acc, l <- ls]
-        combSegs acc (ls:lss) = combSegs [a ++ l | a <- acc, l <- ls] lss
-    -}
+        seqSplits = filter (\(x,y) -> (not (null x)) && (not (null y))) (zip (inits xstmts) (tails xstmts))
+        seqComb = map (\(x,y) -> ((getCombinations x), (getCombinations y))) seqSplits
+        seqAll = map (\(x,y) -> [ (StmtTreeBind xt yt) | xt <- x, yt <- y ]) seqComb
     
-    --allComb = getCombinations stmts
-    --costfuns = [getTotalCost (getCostList a weights 0) | a <- allComb]
+    allComb = getCombinations stmts
+    
+    --costfuns = [ ((\(x, _) -> x) (getTreeCost a weights 0)) | a <- allComb]
     -- ROADMAP:
     -- Ask Wolfram for the asympotitical optimum
     -- Recover the combination from Wolfram's answer
