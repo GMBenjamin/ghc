@@ -2165,6 +2165,7 @@ extractFromEpAnn _ = []
 
 -- Cost extraction/generation *****
 
+{-
 getCostOfSegment :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, String)] -> Int -> (String, Int)
 getCostOfSegment [x] costs pos = 
   case (lookup pos costs) of
@@ -2185,12 +2186,11 @@ getCostList (x:y) costs pos = (cx:rest)
 getTotalCost :: [String] -> String
 getTotalCost [x] = x
 getTotalCost xs = "Max[" ++ (intercalate ", " xs) ++ "]"
+-}
 
 getCostsFromList :: [ExprStmtTree] -> [(Int, String)] -> Int -> [String] -> ([String], Int)
-getCostsFromList [x] costs pos acc = 
-  case getTreeCost x costs pos of
-    (s, p) -> (acc ++ [s], p)
-    _      -> panic "getCostsFromList"
+getCostsFromList [x] costs pos acc = (acc ++ [s], p) where
+  (s, p) = getTreeCost x costs pos
 getCostsFromList (x:y) costs pos acc = getCostsFromList y costs px (acc ++ [cx]) where
   (cx, px) = getTreeCost x costs pos
 
@@ -2203,9 +2203,11 @@ getTreeCost (StmtTreeBind x y) costs pos = (("(" ++ cx ++ ") + (" ++ cy ++ ")"),
   where
     (cx, px) = getTreeCost x costs pos
     (cy, py) = getTreeCost y costs px
-getTreeCost (StmtTreeApplicative ls) costs pos = ("Max[" ++ clist ++ "]", pl) where
-  (rcost, pl) = getCostsFromList ls costs pos []
-  clist = intercalate ", " rcost
+getTreeCost (StmtTreeApplicative ls) costs pos = 
+  (("Last[SortBy[{" ++ clist ++ "}, {Exponent[#, x], Coefficient[#, x, Exponent[#, x]]} &]]"), pl) 
+    where
+      (rcost, pl) = getCostsFromList ls costs pos []
+      clist = intercalate ", " rcost
 
 
 -- Wolfram Interface *****
@@ -2213,7 +2215,7 @@ getTreeCost (StmtTreeApplicative ls) costs pos = ("Max[" ++ clist ++ "]", pl) wh
 buildWolfram :: [String] -> String
 buildWolfram css = wolfram where
   funs = "functions = {" ++ (intercalate ", " css) ++ "};"
-  def = "dFun = First[SortBy[functions, With[{s = Asymptotic[#, x -> Infinity]}, {Exponent[s, x], Coefficient[s, x, Exponent[s, x]]}] &]];"
+  def = "dFun = First[SortBy[functions, {Exponent[#, x], Coefficient[#, x, Exponent[#, x]]} &]];"
   query = "FirstPosition[functions, dFun]"
   wolfram = funs ++ "\n" ++ def ++ "\n" ++ query ++ "\n"
 
