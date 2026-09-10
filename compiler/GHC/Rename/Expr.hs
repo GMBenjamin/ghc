@@ -2396,7 +2396,8 @@ mkStmtTreeOptimal stmts cmmnts = assert (not (null stmts)) $ -- No empty case
     
     query = buildWolfram costFuns
     
-    finalPosition = parseWolfram (askWolfram query)
+    finalPosition | all (== (costFuns !! 0)) costFuns = 0
+                  | otherwise = parseWolfram (askWolfram query)
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
