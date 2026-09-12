@@ -2041,9 +2041,10 @@ checkTupleStruct s =
     Just x -> 
       case (elemIndex ',' s) of
         Just y -> 
-          case (elemIndex ')' s) of 
-            Just z -> (and [(x == 0), (x < y), (y < z), (z == ((length s) - 1))])
-            _      -> False
+          case (elemIndices ')' s) of
+            [] -> False 
+            zs -> (and [(x == 0), (x < y), (y < z), (z == ((length s) - 1))]) where
+                    z = zs !! ((length zs) - 1)
         _      -> False
     _      -> False
 
