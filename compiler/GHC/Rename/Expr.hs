@@ -2030,22 +2030,16 @@ Helper functions for weight annotations
 ***************************************
 -}
 
--- Check Tuple *****
-
 trim :: String -> String
 trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
+-- Check Tuple *****
+
 checkTupleStruct :: String -> Bool
-checkTupleStruct s = 
-  case (elemIndex '(' s) of
-    Just x -> 
-      case (elemIndex ',' s) of
-        Just y -> 
-          case (elemIndices ')' s) of
-            [] -> False 
-            zs -> (and [(x == 0), (x < y), (y < z), (z == ((length s) - 1))]) where
-                    z = zs !! ((length zs) - 1)
-        _      -> False
+checkTupleStruct "" = False
+checkTupleStruct s  =
+  case (elemIndex ',' s) of
+    Just x -> ((s !! 0) == '(') && ((s !! ((length s) - 1)) == ')')
     _      -> False
 
 -- CRS *****
@@ -2074,13 +2068,13 @@ closingParenthesis lp o (x:xs) | ((x == ')') && (o == 1)) = lp
                                | otherwise  = closingParenthesis (lp + 1) o xs
 
 isTerm :: String -> Bool
-isTerm s = ((s == "x") || (isNumbers s))
+isTerm s = ((s == "x") || (isNumber s))
 
 isOperator :: String -> Bool
 isOperator s = ((s == "+") || (s == "*"))
 
-isNumbers :: String -> Bool
-isNumbers s = (all isDigit s)
+isNumber :: String -> Bool
+isNumber s = (all isDigit s)
 
 isPower :: String -> Bool
 isPower s = (s == "^")
@@ -2091,10 +2085,10 @@ checkNoParenthesisCRS s = intercalateOp separated 0 False where
   intercalateOp :: [String] -> Int -> Bool -> Bool
   intercalateOp [] n _ = if (even n) then False else True
   intercalateOp [x] n b = if (even n) 
-                          then (if b then (isNumbers x) else (isTerm x)) 
+                          then (if b then (isNumber x) else (isTerm x)) 
                           else False
   intercalateOp (x:xs) n b = if (even n) 
-                             then ((if b then (isNumbers x) else (isTerm x))
+                             then ((if b then (isNumber x) else (isTerm x))
                                    && (intercalateOp xs (n + 1) False))
                              else (if (isPower x)
                                    then (intercalateOp xs (n + 1) True)
@@ -2109,13 +2103,13 @@ replaceInnerParenthesis s =
       new_s = (take i s) ++ "x" ++ (drop (close + 1) s)
 
 crsCheck :: String -> Bool
-crsCheck s | (isTerm s) = True
-           | otherwise  = ans where
+crsCheck s | s == ""    = False
+           | (isTerm s) = True
+           | otherwise  = (wellWrittenParenthesis s) && ans where
   temp = elemIndices '(' s
   ans = case temp of
     [] -> checkNoParenthesisCRS s
-    _  | not (wellWrittenParenthesis s) -> False
-       | otherwise -> all checkNoParenthesisCRS msubs
+    _  -> all checkNoParenthesisCRS msubs
   pairs = [(t, (closingParenthesis (t + 1) 1 (drop (t + 1) s))) | t <- temp]
   subs = [take (c - t - 1) (drop (t + 1) s) | (t,c) <- pairs] ++ [s]
   msubs = [replaceInnerParenthesis oldsub | oldsub <- subs]
@@ -2130,10 +2124,7 @@ parseTuplePW s | not (checkTupleStruct s) = Nothing
   coPos = fromJust (elemIndex ',' s)
   posS = trim (drop 1 (take coPos s))
   crsS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
-  ans | ((isNumbers posS) && (crsCheck crsS)) =
-        if ((read posS) >= 0)
-        then Just (read posS :: Int, crsS)
-        else Nothing
+  ans | ((isNumber posS) && (crsCheck crsS)) = Just (read posS :: Int, crsS)
       | otherwise = Nothing
 
 -- Extract Weight *****
@@ -2153,20 +2144,20 @@ parsePosString s =
                else Nothing
     _     -> Nothing
 
-extractEpaComments :: LEpaComment -> String
-extractEpaComments (L _ (EpaComment x _)) =
-  case x of
-    EpaBlockComment s -> s
-    EpaLineComment  s -> s
-    _                 -> ""
-
 extractFromEpAnn :: EpAnn a -> [String]
-extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl)
+extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl) where
+  extractEpaComments :: LEpaComment -> String
+  extractEpaComments (L _ (EpaComment x _)) =
+    case x of
+      EpaBlockComment s -> s
+      EpaLineComment  s -> s
+      _                 -> ""
 extractFromEpAnn _ = []
 
 -- Cost extraction/generation *****
 
 getCostsFromList :: [ExprStmtTree] -> [(Int, String)] -> Int -> [String] -> ([String], Int)
+getCostsFromList [] _ pos acc = (acc, pos)
 getCostsFromList [x] costs pos acc = (acc ++ [s], p) where
   (s, p) = getTreeCost x costs pos
 getCostsFromList (x:y) costs pos acc = getCostsFromList y costs px (acc ++ [cx]) where
@@ -2186,7 +2177,6 @@ getTreeCost (StmtTreeApplicative ls) costs pos =
     where
       (rcost, pl) = getCostsFromList ls costs pos []
       clist = intercalate ", " rcost
-
 
 -- Wolfram Interface *****
 
@@ -2296,6 +2286,7 @@ mkStmtTreeHeuristic stmts =
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
 
+-- Original ADO + Hubinette and Thune modifications
 solveNoSymbolic :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, Int)] -> ExprStmtTree
 solveNoSymbolic stmts weights =
   assert (not (null stmts)) $ fst (arr ! (0,n))
@@ -2338,16 +2329,10 @@ solveNoSymbolic stmts weights =
       | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
       | otherwise = (StmtTreeBind before after, c1+c2)
         where
-         -- As per the paper, for a sequence s1...sn, we want to find
-         -- the split with the minimum cost, where the cost is the
-         -- sum of the cost of the left and right subsequences.
-         --
-         -- ***Hubinette and Thune 3.1.1
-         --
          ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
              Nothing ->
                ( (StmtTreeOne (stmt_arr ! lo), loCost),
-                 (StmtTreeOne (stmt_arr ! hi), hiCost) ) -- ***Hubinette and Thune 3.1.1
+                 (StmtTreeOne (stmt_arr ! hi), hiCost) )
              Just ks ->
                minimumBy (comparing cost) [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
            where
@@ -2359,7 +2344,7 @@ mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
 mkStmtTreeOptimal stmts cmmnts = assert (not (null stmts)) $ -- No empty case
   case weights of
     [] -> solveNoSymbolic stmts []
-    _  -> if (all (\(_,c) -> (isNumbers c)) weights)
+    _  -> if (all (\(_,c) -> (isNumber c)) weights)
           then solveNoSymbolic stmts (map (\(p,c) -> (p, read c :: Int)) weights)
           else 
             (case allComb of
