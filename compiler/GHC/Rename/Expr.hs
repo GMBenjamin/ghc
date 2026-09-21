@@ -79,7 +79,6 @@ import Data.Array
 import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 import Data.Char (isSpace, toLower, isDigit)
-import GHC.Parser.Annotation (EpAnn(..), EpAnnComments, EpaComment(..), EpaCommentTok(..))
 import System.Process (readProcess)
 import System.IO.Unsafe
 
