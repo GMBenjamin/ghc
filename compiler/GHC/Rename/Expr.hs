@@ -2039,7 +2039,7 @@ checkTupleStruct :: String -> Bool
 checkTupleStruct "" = False
 checkTupleStruct s  =
   case (elemIndex ',' s) of
-    Just x -> ((s !! 0) == '(') && ((s !! ((length s) - 1)) == ')')
+    Just _ -> ((s !! 0) == '(') && ((s !! ((length s) - 1)) == ')')
     _      -> False
 
 -- CRS *****
@@ -2060,6 +2060,7 @@ wellWrittenParenthesis s = something where
 -- closingParenthesis :: looking position -> opened -> string
 -- The function is executed iff every parenthesis has a closure.
 closingParenthesis :: Int -> Int -> String -> Int
+closingParenthesis _ _ [] = -1
 closingParenthesis lp o [x] | ((x == ')') && (o == 1)) = lp
                             | otherwise                = -1
 closingParenthesis lp o (x:xs) | ((x == ')') && (o == 1)) = lp
@@ -2168,7 +2169,7 @@ getTreeCost (StmtTreeOne _) costs pos =
   case (lookup pos costs) of
     (Just c) -> (c, (pos + 1))
     _        -> ("1", (pos + 1))
-getTreeCost (StmtTreeBind x y) costs pos = (("(" ++ cx ++ ") + (" ++ cy ++ ")"), py)
+getTreeCost (StmtTreeBind x y) costs pos = ((cx ++ " + " ++ cy), py)
   where
     (cx, px) = getTreeCost x costs pos
     (cy, py) = getTreeCost y costs px
@@ -2367,8 +2368,10 @@ mkStmtTreeOptimal stmts cmmnts = assert (not (null stmts)) $ -- No empty case
       where
         sgx = segments xstmts
         appendSegs :: [[ExprStmtTree]] -> [[ExprStmtTree]]
+        appendSegs [] = []
         appendSegs [ls] = separate ls where
           separate :: [ExprStmtTree] -> [[ExprStmtTree]]
+          separate [] = []
           separate [l] = [[l]]
           separate (l1:ll) = [[l1]] ++ (separate ll)
         appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
