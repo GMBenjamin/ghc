@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, elemIndex, elemIndices, intercalate, inits, tails)
+import Data.List (unzip4, elemIndex)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -79,8 +79,6 @@ import Data.Array
 import GHC.Driver.Env (HscEnv)
 import Data.Foldable (toList)
 import Data.Char (isSpace, toLower, isDigit)
-import System.Process (readProcess)
-import System.IO.Unsafe
 
 {- Note [Handling overloaded and rebindable constructs]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2041,95 +2039,78 @@ checkTupleStruct s  =
     Just _ -> ((s !! 0) == '(') && ((s !! ((length s) - 1)) == ')')
     _      -> False
 
--- CRS *****
+-- Polynomials *****
 
-wellWrittenParenthesis :: String -> Bool
-wellWrittenParenthesis s = something where
-  open = elemIndices '(' s
-  close = elemIndices ')' s
-  something | (length open) /= (length close) = False
-            | otherwise = 
-                case (open,close) of
-                  ([],[])   -> True
-                  ([x],[y]) -> (x < y)
-                  _         ->  and [(length (dropWhile (<= (open !! p)) close)) >= (tot - p) | p <- pos]
-  tot = length open                     
-  pos = [0..tot-1]
+data Polynomial = NullP | Poly Int Int Polynomial deriving (Show)
 
--- closingParenthesis :: looking position -> opened -> string
--- The function is executed iff every parenthesis has a closure.
-closingParenthesis :: Int -> Int -> String -> Int
-closingParenthesis _ _ [] = -1
-closingParenthesis lp o [x] | ((x == ')') && (o == 1)) = lp
-                            | otherwise                = -1
-closingParenthesis lp o (x:xs) | ((x == ')') && (o == 1)) = lp
-                               | (x == ')') = closingParenthesis (lp + 1) (o - 1) xs
-                               | (x == '(') = closingParenthesis (lp + 1) (o + 1) xs
-                               | otherwise  = closingParenthesis (lp + 1) o xs
+instance Eq Polynomial where
+  (NullP) == (NullP) = True
+  (Poly a b r1) == (Poly c d r2) = (a == c) && (b == d) && (r1 == r2)
+  _ == _ = False
+  
+instance Ord Polynomial where
+  -- <=
+  (NullP) <= _ = True
+  (Poly _ _ _) <= (NullP) = False
+  (Poly a b r1) <= (Poly c d r2) = (b < d) || ((b == d) && (a < c)) || ((b == d) && (a == c) && (r1 <= r2))
 
-isTerm :: String -> Bool
-isTerm s = ((s == "x") || (isNumber s))
+addPoly :: Polynomial -> Polynomial -> Polynomial
+addPoly x (NullP) = x
+addPoly (NullP) x = x
+addPoly (Poly a b r1) (Poly c d r2) = if (d > b)
+                                      then (addPoly (Poly c d (Poly a b r1)) r2)
+                                      else (if (d == b) 
+                                            then (addPoly (Poly (a + c) b r1) r2) 
+                                            else (addPoly (Poly a b (addPoly r1 (Poly c d (NullP)))) r2))
 
-isOperator :: String -> Bool
-isOperator s = ((s == "+") || (s == "*"))
+termCheck :: String -> Bool
+termCheck s = ((length numPart) >= 0) && varPart where
+  numPart = takeWhile isDigit s
+  varPart = 
+    case (dropWhile isDigit s) of
+      [] -> True
+      "x" -> True
+      ('x':'^':exp) -> (length exp > 0) && (all isDigit exp)
+      _ -> False
 
-isNumber :: String -> Bool
-isNumber s = (all isDigit s)
+polyCheck :: String -> Bool
+polyCheck s = 
+  case (words s) of
+    [x] -> termCheck x
+    (s1:"+":s2) -> (termCheck s1) && (polyCheck (unwords s2))
+    _ -> False
 
-isPower :: String -> Bool
-isPower s = (s == "^")
-
-checkNoParenthesisCRS :: String -> Bool
-checkNoParenthesisCRS s = intercalateOp separated 0 False where
-  separated = words s
-  intercalateOp :: [String] -> Int -> Bool -> Bool
-  intercalateOp [] n _ = if (even n) then False else True
-  intercalateOp [x] n b = if (even n) 
-                          then (if b then (isNumber x) else (isTerm x)) 
-                          else False
-  intercalateOp (x:xs) n b = if (even n) 
-                             then ((if b then (isNumber x) else (isTerm x))
-                                   && (intercalateOp xs (n + 1) False))
-                             else (if (isPower x)
-                                   then (intercalateOp xs (n + 1) True)
-                                   else ((isOperator x) && (intercalateOp xs (n + 1) False)))
-
-replaceInnerParenthesis :: String -> String
-replaceInnerParenthesis s = 
-  case (elemIndices '(' s) of
-    [] -> s
-    (i:_) -> replaceInnerParenthesis new_s where
-      close = closingParenthesis (i + 1) 1 (drop (i + 1) s)
-      new_s = (take i s) ++ "x" ++ (drop (close + 1) s)
-
-crsCheck :: String -> Bool
-crsCheck s | s == ""    = False
-           | (isTerm s) = True
-           | otherwise  = (wellWrittenParenthesis s) && ans where
-  temp = elemIndices '(' s
-  ans = case temp of
-    [] -> checkNoParenthesisCRS s
-    _  -> all checkNoParenthesisCRS msubs
-  pairs = [(t, (closingParenthesis (t + 1) 1 (drop (t + 1) s))) | t <- temp]
-  subs = [take (c - t - 1) (drop (t + 1) s) | (t,c) <- pairs] ++ [s]
-  msubs = [replaceInnerParenthesis oldsub | oldsub <- subs]
+interpPoly :: String -> Polynomial
+interpPoly x = 
+  case (words x) of
+    [s] -> interpTerm s
+    (s1:"+":s2) -> addPoly (interpTerm s1) (interpPoly (unwords s2))
+    _ -> NullP -- Just here for completeness. Never going to happend
+  where
+    interpTerm xs = (Poly a b (NullP)) where
+      a = if (length (takeWhile isDigit xs)) == 0 then 1 else (read (takeWhile isDigit xs)) :: Int 
+      b = case (dropWhile isDigit xs) of
+            "" -> 0
+            "x" -> 1
+            ('x':'^':exp) -> (read exp) :: Int
+            _ -> 0 -- Just here for completeness. Never going to happend
 
 -- Read Tuple *****
 
 -- There is no need for checking the upper limit.
 -- ADO would never try to find the cost of a stmt over the limit.
-parseTuplePW :: String -> Maybe (Int, String)
+parseTuplePW :: String -> Maybe (Int, Polynomial)
 parseTuplePW s | not (checkTupleStruct s) = Nothing 
                | otherwise                = ans where
   coPos = fromJust (elemIndex ',' s)
   posS = trim (drop 1 (take coPos s))
   crsS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
-  ans | ((isNumber posS) && (crsCheck crsS)) = Just (read posS :: Int, crsS)
+  ans | ((all isDigit posS) && (polyCheck crsS)) = Just (read posS :: Int, interpPoly crsS)
       | otherwise = Nothing
 
 -- Extract Weight *****
 
-parsePosString :: String -> Maybe (Int, String)
+parsePosString :: String -> Maybe (Int, Polynomial)
 -- Inline comment
 parsePosString ('-':s) = parsePosString (trim (drop 1 s))
 -- Block comment
@@ -2153,46 +2134,6 @@ extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaCo
       EpaLineComment  s -> s
       _                 -> ""
 extractFromEpAnn _ = []
-
--- Cost extraction/generation *****
-
-getCostsFromList :: [ExprStmtTree] -> [(Int, String)] -> Int -> [String] -> ([String], Int)
-getCostsFromList [] _ pos acc = (acc, pos)
-getCostsFromList [x] costs pos acc = (acc ++ [s], p) where
-  (s, p) = getTreeCost x costs pos
-getCostsFromList (x:y) costs pos acc = getCostsFromList y costs px (acc ++ [cx]) where
-  (cx, px) = getTreeCost x costs pos
-
-getTreeCost :: ExprStmtTree -> [(Int, String)] -> Int -> (String, Int)
-getTreeCost (StmtTreeOne _) costs pos =  
-  case (lookup pos costs) of
-    (Just c) -> (c, (pos + 1))
-    _        -> ("1", (pos + 1))
-getTreeCost (StmtTreeBind x y) costs pos = ((cx ++ " + " ++ cy), py)
-  where
-    (cx, px) = getTreeCost x costs pos
-    (cy, py) = getTreeCost y costs px
-getTreeCost (StmtTreeApplicative ls) costs pos = 
-  (("Last[SortBy[{" ++ clist ++ "}, {Exponent[#, x], Coefficient[#, x, Exponent[#, x]]} &]]"), pl) 
-    where
-      (rcost, pl) = getCostsFromList ls costs pos []
-      clist = intercalate ", " rcost
-
--- Wolfram Interface *****
-
-buildWolfram :: [String] -> String
-buildWolfram css = wolfram where
-  funs = "functions = {" ++ (intercalate ", " css) ++ "};"
-  def = "dFun = First[SortBy[functions, {Exponent[#, x], Coefficient[#, x, Exponent[#, x]]} &]];"
-  query = "FirstPosition[functions, dFun]"
-  wolfram = funs ++ "\n" ++ def ++ "\n" ++ query ++ "\n"
-
-askWolfram :: String -> String
-askWolfram query = unsafePerformIO (readProcess "wolframscript" ["-code", query] "")
-
-parseWolfram :: String -> Int
-parseWolfram ('M':_) = -1
-parseWolfram s = read (trim (reverse (drop 1 (reverse (drop 1 (trim s)))))) - 1
 
 -- *************************************************************
 
@@ -2267,7 +2208,6 @@ flattenStmtTree t = go t []
   go (StmtTreeApplicative ts) as = foldr go as ts
 
 type ExprStmtTree = StmtTree (ExprLStmt GhcRn, FreeNames)
-type Cost = Int
 
 -- | Turn a sequence of statements into an ExprStmtTree using a
 -- heuristic algorithm.  /O(n^2)/
@@ -2285,26 +2225,27 @@ mkStmtTreeHeuristic stmts =
 
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
-
--- Original ADO + Hubinette and Thune modifications
-solveNoSymbolic :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int, Int)] -> ExprStmtTree
-solveNoSymbolic stmts weights =
+mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
+mkStmtTreeOptimal stmts cmmnts = 
   assert (not (null stmts)) $ fst (arr ! (0,n))
   -- the empty case is handled by the caller; No support for empty StmtTrees.
   where
+    -- weights :: [(Int, Polynomial)]
+    weights = mapMaybe parsePosString cmmnts
+    
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
     
-    findCost :: Int -> [(Int,Int)] -> Int
+    findCost :: Int -> [(Int,Polynomial)] -> Polynomial
     findCost x ls = 
       case (lookup x ls) of
         (Just y) -> y
-        _        -> 1
+        _        -> (Poly 1 0 (NullP)) -- Unit cost
 
     cost_arr = listArray (0,n) [findCost i weights | i <- [0..n]]
-
+    
     -- lazy cache of optimal trees for subsequences of the input
-    arr :: Array (Int,Int) (ExprStmtTree, Cost)
+    arr :: Array (Int,Int) (ExprStmtTree, Polynomial)
     arr = array ((0,0),(n,n))
              [ ((lo,hi), tree lo hi)
              | lo <- [0..n]
@@ -2324,10 +2265,10 @@ solveNoSymbolic stmts weights =
                (trees,costs) = unzip (map (uncurry split) (tail bounds))
 
     -- find the best place to split the segment [lo..hi]
-    split :: Int -> Int -> (ExprStmtTree, Cost)
+    split :: Int -> Int -> (ExprStmtTree, Polynomial)
     split lo hi
       | hi == lo = (StmtTreeOne (stmt_arr ! lo), (cost_arr ! lo))
-      | otherwise = (StmtTreeBind before after, c1+c2)
+      | otherwise = (StmtTreeBind before after, (addPoly c1 c2))
         where
          ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
              Nothing ->
@@ -2336,56 +2277,30 @@ solveNoSymbolic stmts weights =
              Just ks ->
                minimumBy (comparing cost) [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
            where
-             cost ((_,c1),(_,c2)) = c1 + c2
+             cost ((_,c1),(_,c2)) = addPoly c1 c2
              loCost = (cost_arr ! lo)
              hiCost = (cost_arr ! hi)
-
-mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
-mkStmtTreeOptimal stmts cmmnts = assert (not (null stmts)) $ -- No empty case
-  case weights of
-    [] -> solveNoSymbolic stmts []
-    _  -> if (all (\(_,c) -> (isNumber c)) weights)
-          then solveNoSymbolic stmts (map (\(p,c) -> (p, read c :: Int)) weights)
-          else 
-            (case allComb of
-              [x] -> x
-              _   -> 
-                if (finalPosition < 0)
-                then panic "mkStmtTree"
-                else (allComb !! finalPosition))
-  where
-    weights = mapMaybe parsePosString cmmnts
-    
-    getCombinations :: [(ExprLStmt GhcRn, FreeNames)] -> [ExprStmtTree]
-    getCombinations [x] = [(StmtTreeOne x)]
-    getCombinations xstmts | (length sgx) == (length xstmts) = 
-        [(StmtTreeApplicative [ (StmtTreeOne xs) | xs <- xstmts ])]
-                           | (length sgx) == 1               =
-        (concat seqAll)
-                           | otherwise                       =
-        [ (StmtTreeApplicative x) | x <- (appendSegs (map getCombinations sgx)) ]
-      where
-        sgx = segments xstmts
-        appendSegs :: [[ExprStmtTree]] -> [[ExprStmtTree]]
-        appendSegs [] = []
-        appendSegs [ls] = separate ls where
-          separate :: [ExprStmtTree] -> [[ExprStmtTree]]
-          separate [] = []
-          separate [l] = [[l]]
-          separate (l1:ll) = [[l1]] ++ (separate ll)
-        appendSegs (ls:lss) = [ (li:lsi) | li <- ls, lsi <- (appendSegs lss) ]
-        seqSplits = filter (\(x,y) -> (not (null x)) && (not (null y))) (zip (inits xstmts) (tails xstmts))
-        seqComb = map (\(x,y) -> ((getCombinations x), (getCombinations y))) seqSplits
-        seqAll = map (\(x,y) -> [ (StmtTreeBind xt yt) | xt <- x, yt <- y ]) seqComb
-    
-    allComb = getCombinations stmts
-    
-    costFuns = [ ((\(x, _) -> x) (getTreeCost a weights 0)) | a <- allComb ]
-    
-    query = buildWolfram costFuns
-    
-    finalPosition | all (== (costFuns !! 0)) costFuns = 0
-                  | otherwise = parseWolfram (askWolfram query)
+{- SHORTCUT
+         ((before,c1),(after,c2)) = case nonEmpty [lo .. hi-1] of
+             Nothing ->
+               ( (StmtTreeOne (stmt_arr ! lo), loCost),
+                 (StmtTreeOne (stmt_arr ! hi), hiCost) )
+             Just ks
+               | (left_cost < right_cost) && (costZ == costN) --(loCost == hiCost)
+               -> ((left,left_cost), (StmtTreeOne (stmt_arr ! hi), hiCost))
+               | (left_cost > right_cost) && (costZ == costN) --(loCost == hiCost)
+               -> ((StmtTreeOne (stmt_arr ! lo), loCost), (right,right_cost))
+               | otherwise -> minimumBy (comparing cost)
+                 [ (arr ! (lo,k), arr ! (k+1,hi)) | k <- ks ]
+           where
+             (left, left_cost) = arr ! (lo,hi-1)
+             (right, right_cost) = arr ! (lo+1,hi)
+             cost ((_,c1),(_,c2)) = addPoly c1 c2
+             loCost = (cost_arr ! lo)
+             hiCost = (cost_arr ! hi)
+             costZ = (cost_arr ! 0)
+             costN = (cost_arr ! n)
+-}
 
 -- | Turn the ExprStmtTree back into a sequence of statements, using
 -- ApplicativeStmt where necessary.
