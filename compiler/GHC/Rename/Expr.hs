@@ -71,7 +71,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import qualified Data.Foldable as Partial (maximum)
-import Data.List (unzip4, elemIndex)
+import Data.List (unzip4)
 import Data.List.NonEmpty ( NonEmpty(..), head, init, last, nonEmpty, scanl, tail )
 import Control.Arrow (first)
 import Data.Ord
@@ -1157,7 +1157,7 @@ rnStmts ctxt rnBody stmts thing_inside
 postProcessStmtsForApplicativeDo
   :: HsDoFlavour
   -> [(ExprLStmt GhcRn, FreeNames)]
-  -> [String]
+  -> [(Int,String)]
   -> RnM ([ExprLStmt GhcRn], FreeNames)
 postProcessStmtsForApplicativeDo ctxt stmts cmmnts
   = do {
@@ -2030,15 +2030,6 @@ Helper functions for weight annotations
 trim :: String -> String
 trim s = reverse (dropWhile isSpace (reverse (dropWhile isSpace s)))
 
--- Check Tuple *****
-
-checkTupleStruct :: String -> Bool
-checkTupleStruct "" = False
-checkTupleStruct s  =
-  case (elemIndex ',' s) of
-    Just _ -> ((s !! 0) == '(') && ((s !! ((length s) - 1)) == ')')
-    _      -> False
-
 -- Polynomials *****
 
 data Polynomial = NullP | Poly Int Int Polynomial deriving (Show)
@@ -2095,44 +2086,35 @@ interpPoly x =
             ('x':'^':exp) -> (read exp) :: Int
             _ -> 0 -- Just here for completeness. Never going to happend
 
--- Read Tuple *****
+-- Read Cost *****
 
--- There is no need for checking the upper limit.
--- ADO would never try to find the cost of a stmt over the limit.
-parseTuplePW :: String -> Maybe (Int, Polynomial)
-parseTuplePW s | not (checkTupleStruct s) = Nothing 
-               | otherwise                = ans where
-  coPos = fromJust (elemIndex ',' s)
-  posS = trim (drop 1 (take coPos s))
-  crsS = reverse (trim (drop 1 (reverse (drop (coPos + 1) s))))
-  ans | ((all isDigit posS) && (polyCheck crsS)) = Just (read posS :: Int, interpPoly crsS)
-      | otherwise = Nothing
+parsePolyString :: (Int, String) -> Maybe (Int, Polynomial)
+parsePolyString (n, x) | polyCheck x = Just (n, interpPoly x)
+                       | otherwise   = Nothing
 
--- Extract Weight *****
-
-parsePosString :: String -> Maybe (Int, Polynomial)
+parseFullString :: (Int, String) -> Maybe (Int, Polynomial)
 -- Inline comment
-parsePosString ('-':s) = parsePosString (trim (drop 1 s))
+parseFullString (n, ('-':s)) = parseFullString (n, (trim (drop 1 s)))
 -- Block comment
-parsePosString ('{':s) = parsePosString (trim (reverse (drop 2 (reverse (drop 1 s)))))
+parseFullString (n, ('{':s)) = parseFullString (n, (trim (reverse (drop 2 (reverse (drop 1 s))))))
 -- General case
-parsePosString s = 
+parseFullString (n, s) = 
   case (map (map toLower) (words s)) of 
     (x:_) -> if (x == "weight")
-             then parseTuplePW (trim (drop 6 (trim s)))
+             then parsePolyString (n, (trim (drop 6 (trim s))))
              else if (x == "weight:")
-               then parseTuplePW (trim (drop 7 (trim s)))
+               then parsePolyString (n, (trim (drop 7 (trim s))))
                else Nothing
     _     -> Nothing
 
-extractFromEpAnn :: EpAnn a -> [String]
-extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (/= "") (map extractEpaComments cl) where
-  extractEpaComments :: LEpaComment -> String
-  extractEpaComments (L _ (EpaComment x _)) =
+extractFromEpAnn :: EpAnn a -> [(Int,String)]
+extractFromEpAnn (EpAnn _ _ (EpaComments cl)) = filter (\(_, s) -> (s /= "")) (map extractEpaComments cl) where
+  extractEpaComments :: LEpaComment -> (Int, String)
+  extractEpaComments (L _ (EpaComment x y)) =
     case x of
-      EpaBlockComment s -> s
-      EpaLineComment  s -> s
-      _                 -> ""
+      EpaBlockComment s -> (srcSpanStartLine y, s)
+      EpaLineComment  s -> (srcSpanStartLine y, s)
+      _                 -> (srcSpanStartLine y, "")
 extractFromEpAnn _ = []
 
 -- *************************************************************
@@ -2157,7 +2139,7 @@ instance Outputable MonadNames where
 rearrangeForApplicativeDo
   :: HsDoFlavour
   -> [(ExprLStmt GhcRn, FreeNames)]
-  -> [String]
+  -> [(Int,String)]
   -> RnM ([ExprLStmt GhcRn], FreeNames)
 
 rearrangeForApplicativeDo _ [] _ = return ([], emptyNameSet)
@@ -2225,13 +2207,13 @@ mkStmtTreeHeuristic stmts =
 
 -- | Turn a sequence of statements into an ExprStmtTree optimally,
 -- using dynamic programming.  /O(n^3)/
-mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [String] -> ExprStmtTree
+mkStmtTreeOptimal :: [(ExprLStmt GhcRn, FreeNames)] -> [(Int,String)] -> ExprStmtTree
 mkStmtTreeOptimal stmts cmmnts = 
   assert (not (null stmts)) $ fst (arr ! (0,n))
   -- the empty case is handled by the caller; No support for empty StmtTrees.
   where
     -- weights :: [(Int, Polynomial)]
-    weights = mapMaybe parsePosString cmmnts
+    weights = mapMaybe parseFullString cmmnts
     
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
@@ -2242,7 +2224,9 @@ mkStmtTreeOptimal stmts cmmnts =
         (Just y) -> y
         _        -> (Poly 1 0 (NullP)) -- Unit cost
 
-    cost_arr = listArray (0,n) [findCost i weights | i <- [0..n]]
+    aux = [srcSpanStartLine (realSrcSpan (getLocA ((\(x, _) -> x) (stmts !! i)))) | i <- [0..n]]
+
+    cost_arr = listArray (0,n) [findCost (aux !! i) weights | i <- [0..n]]
     
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Polynomial)
