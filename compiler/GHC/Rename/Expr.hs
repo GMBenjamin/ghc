@@ -2055,8 +2055,9 @@ addPoly (Poly a b r1) (Poly c d r2) = if (d > b)
                                             else (addPoly (Poly a b (addPoly r1 (Poly c d (NullP)))) r2))
 
 termCheck :: String -> Bool
-termCheck s = ((length numPart) >= 0) && varPart where
+termCheck s = numCond && varPart where
   numPart = takeWhile isDigit s
+  numCond = (((length numPart) > 0) && ((read numPart :: Int) > 0)) || ((length numPart) == 0)
   varPart = 
     case (dropWhile isDigit s) of
       [] -> True
