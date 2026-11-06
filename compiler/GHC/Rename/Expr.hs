@@ -2023,7 +2023,7 @@ ApplicativeDo touches a few phases in the compiler:
 
 {- 
 ***************************************
-Helper functions for weight annotations
+Helper functions for cost annotations
 ***************************************
 -}
 
@@ -2101,9 +2101,9 @@ parseFullString (n, ('{':s)) = parseFullString (n, (trim (reverse (drop 2 (rever
 -- General case
 parseFullString (n, s) = 
   case (map (map toLower) (words s)) of 
-    (x:_) -> if (x == "weight")
+    (x:_) -> if (x == "cost")
              then parsePolyString (n, (trim (drop 6 (trim s))))
-             else if (x == "weight:")
+             else if (x == "cost:")
                then parsePolyString (n, (trim (drop 7 (trim s))))
                else Nothing
     _     -> Nothing
@@ -2213,8 +2213,8 @@ mkStmtTreeOptimal stmts cmmnts =
   assert (not (null stmts)) $ fst (arr ! (0,n))
   -- the empty case is handled by the caller; No support for empty StmtTrees.
   where
-    -- weights :: [(Int, Polynomial)]
-    weights = mapMaybe parseFullString cmmnts
+    -- costP :: [(Int, Polynomial)]
+    costP = mapMaybe parseFullString cmmnts
     
     n = length stmts - 1
     stmt_arr = listArray (0,n) stmts
@@ -2227,7 +2227,7 @@ mkStmtTreeOptimal stmts cmmnts =
 
     aux = [srcSpanStartLine (realSrcSpan (getLocA ((\(x, _) -> x) (stmts !! i)))) | i <- [0..n]]
 
-    cost_arr = listArray (0,n) [findCost (aux !! i) weights | i <- [0..n]]
+    cost_arr = listArray (0,n) [findCost (aux !! i) costP | i <- [0..n]]
     
     -- lazy cache of optimal trees for subsequences of the input
     arr :: Array (Int,Int) (ExprStmtTree, Polynomial)
