@@ -2102,9 +2102,9 @@ parseFullString (n, ('{':s)) = parseFullString (n, (trim (reverse (drop 2 (rever
 parseFullString (n, s) = 
   case (map (map toLower) (words s)) of 
     (x:_) -> if (x == "cost")
-             then parsePolyString (n, (trim (drop 6 (trim s))))
+             then parsePolyString (n, (trim (drop 4 (trim s))))
              else if (x == "cost:")
-               then parsePolyString (n, (trim (drop 7 (trim s))))
+               then parsePolyString (n, (trim (drop 5 (trim s))))
                else Nothing
     _     -> Nothing
 
